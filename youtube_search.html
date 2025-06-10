@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>YouTube Channel Search</title>
+  <title>YouTube Multi-Channel Search</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       padding: 20px;
+      margin: 0;
     }
 
     #search-form {
@@ -17,6 +18,14 @@
       padding: 8px;
       width: 300px;
       font-size: 16px;
+      border: 2px solid #ccc;
+      border-radius: 6px;
+    }
+
+    #search-form input:focus {
+      outline: none;
+      border-color: #00bcd4;
+      box-shadow: 0 0 5px #00bcd4;
     }
 
     #search-form button {
@@ -24,8 +33,14 @@
       font-size: 16px;
     }
 
+    .hint {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 10px;
+    }
+
     .channel-section {
-      margin-bottom: 40px;
+      margin-bottom: 50px;
     }
 
     .channel-section h2 {
@@ -33,14 +48,20 @@
     }
 
     .video-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 20px;
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 16px;
+      justify-items: center;
     }
 
     .video-card {
-      width: 200px;
+      display: block;
       text-align: center;
+      text-decoration: none;
+      color: #333;
+      font-weight: bold;
+      border-radius: 8px;
+      outline: none;
     }
 
     .video-card img {
@@ -49,15 +70,28 @@
       border-radius: 8px;
     }
 
-    .video-card a {
-      text-decoration: none;
-      color: #333;
-      font-weight: bold;
+    .video-card:focus {
+      outline: 4px solid #2196f3;
+      background-color: #eef6ff;
+    }
+
+    @media screen and (max-width: 1200px) {
+      .video-list {
+        grid-template-columns: repeat(6, 1fr);
+      }
+    }
+
+    @media screen and (max-width: 800px) {
+      .video-list {
+        grid-template-columns: repeat(3, 1fr);
+      }
     }
   </style>
 </head>
 <body>
   <h1>YouTube Multi-Channel Search</h1>
+
+  <div class="hint">Press <strong>0</strong> on your remote to focus the search box</div>
 
   <form id="search-form">
     <input type="text" id="search-input" placeholder="Search videos..." required />
@@ -73,6 +107,13 @@
       { id: 'UCMgbJL73cGG3TxmYafJw5hA', title: 'Channel B (UCMgbJL7...)' }
     ];
     const MAX_RESULTS = 15;
+    const COLUMNS = 8;
+
+    let videoCards = [];
+
+    function isSamsungTV() {
+      return /Tizen|Samsung/.test(navigator.userAgent);
+    }
 
     document.getElementById('search-form').addEventListener('submit', function (event) {
       event.preventDefault();
@@ -85,6 +126,7 @@
     async function searchAllChannels(query) {
       const resultsContainer = document.getElementById('results-container');
       resultsContainer.innerHTML = '';
+      videoCards = [];
 
       const promises = CHANNELS.map(async (channel) => {
         const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${MAX_RESULTS}&q=${encodeURIComponent(query)}&channelId=${channel.id}&key=${API_KEY}`;
@@ -103,29 +145,67 @@
         const videoList = document.createElement('div');
         videoList.className = 'video-list';
 
-        if (items.length === 0) {
-          videoList.innerHTML = '<p>No results found.</p>';
-        } else {
-          items.forEach(item => {
-            const videoId = item.id.videoId;
-            const title = item.snippet.title;
-            const thumbnail = item.snippet.thumbnails.medium.url;
+        items.forEach(item => {
+          const videoId = item.id.videoId;
+          const title = item.snippet.title;
+          const thumbnail = item.snippet.thumbnails.medium.url;
 
-            const card = document.createElement('div');
-            card.className = 'video-card';
-            card.innerHTML = `
-              <a href="watch.html?id=${videoId}">
-                <img src="${thumbnail}" alt="${title}">
-                <div>${title}</div>
-              </a>
-            `;
-            videoList.appendChild(card);
-          });
-        }
+          const card = document.createElement('a');
+          card.href = `watch.html?id=${videoId}`;
+          card.className = 'video-card';
+          card.setAttribute('tabindex', '0');
+          card.innerHTML = `
+            <img src="${thumbnail}" alt="${title}">
+            <div>${title}</div>
+          `;
+          videoList.appendChild(card);
+          videoCards.push(card);
+        });
 
         section.appendChild(videoList);
         resultsContainer.appendChild(section);
       });
+
+      if (videoCards.length > 0) {
+        videoCards[0].focus();
+      }
+    }
+
+    document.addEventListener('keydown', function (event) {
+      const current = document.activeElement;
+      const index = videoCards.indexOf(current);
+
+      // Allow pressing "0" to return to search
+      if (event.key === '0' || event.keyCode === 48 || event.keyCode === 10009) {
+        document.getElementById('search-input').focus();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+
+      if (index === -1) return;
+
+      switch (event.key) {
+        case 'ArrowRight':
+          if (videoCards[index + 1]) videoCards[index + 1].focus();
+          break;
+        case 'ArrowLeft':
+          if (videoCards[index - 1]) videoCards[index - 1].focus();
+          break;
+        case 'ArrowDown':
+          if (videoCards[index + COLUMNS]) videoCards[index + COLUMNS].focus();
+          break;
+        case 'ArrowUp':
+          if (videoCards[index - COLUMNS]) videoCards[index - COLUMNS].focus();
+          break;
+        case 'Enter':
+          current.click();
+          break;
+      }
+    });
+
+    // Optionally auto-focus search input if user is on a Samsung TV
+    if (isSamsungTV()) {
+      document.getElementById('search-input').focus();
     }
   </script>
 </body>
