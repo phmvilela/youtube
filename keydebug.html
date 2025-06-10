@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Remote Key Debug</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background-color: #111;
+      color: #fff;
+      padding: 20px;
+      text-align: center;
+    }
+
+    h1 {
+      color: #00bcd4;
+    }
+
+    #output {
+      font-size: 24px;
+      margin-top: 40px;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+  <h1>Remote Key Debugger</h1>
+  <p>Press any button on your remote.</p>
+  <div id="output">Waiting for input...</div>
+
+  <script>
+    const output = document.getElementById('output');
+
+    function displayKeyInfo(event) {
+      const info = `
+Key: ${event.key}
+KeyCode: ${event.keyCode}
+Code: ${event.code || 'N/A'}
+Time: ${new Date().toLocaleTimeString()}
+      `.trim();
+
+      output.textContent = info;
+      console.log(info);
+    }
+
+    // Listen for key presses from any source (remote or keyboard)
+    window.addEventListener('keydown', displayKeyInfo);
+  </script>
+</body>
+</html>
