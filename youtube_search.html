@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>YouTube Search</title>
+  <title>YouTube Channel Search</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -24,7 +24,15 @@
       font-size: 16px;
     }
 
-    #video-list {
+    .channel-section {
+      margin-bottom: 40px;
+    }
+
+    .channel-section h2 {
+      margin-bottom: 15px;
+    }
+
+    .video-list {
       display: flex;
       flex-wrap: wrap;
       gap: 20px;
@@ -49,56 +57,74 @@
   </style>
 </head>
 <body>
-  <h1>YouTube Channel Video Search</h1>
+  <h1>YouTube Multi-Channel Search</h1>
 
   <form id="search-form">
     <input type="text" id="search-input" placeholder="Search videos..." required />
     <button type="submit">Search</button>
   </form>
 
-  <div id="video-list"></div>
+  <div id="results-container"></div>
 
   <script>
     const API_KEY = 'AIzaSyAA5ffcNmPla6nq0WzTu265jUprHJUw9HM';
-    const CHANNEL_ID = 'UCMgbJL73cGG3TxmYafJw5hA';
-    const MAX_RESULTS = 10;
+    const CHANNELS = [
+      { id: 'UCLsooMJoIpl_7ux2jvdPB-Q', title: 'Channel A (UCLsooMJo...)' },
+      { id: 'UCMgbJL73cGG3TxmYafJw5hA', title: 'Channel B (UCMgbJL7...)' }
+    ];
+    const MAX_RESULTS = 15;
 
     document.getElementById('search-form').addEventListener('submit', function (event) {
       event.preventDefault();
       const query = document.getElementById('search-input').value.trim();
       if (query) {
-        fetchVideos(query);
+        searchAllChannels(query);
       }
     });
 
-    async function fetchVideos(query) {
-      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${MAX_RESULTS}&q=${encodeURIComponent(query)}&channelId=${CHANNEL_ID}&key=${API_KEY}`;
+    async function searchAllChannels(query) {
+      const resultsContainer = document.getElementById('results-container');
+      resultsContainer.innerHTML = '';
 
-      const res = await fetch(url);
-      const data = await res.json();
+      const promises = CHANNELS.map(async (channel) => {
+        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${MAX_RESULTS}&q=${encodeURIComponent(query)}&channelId=${channel.id}&key=${API_KEY}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        return { channel, items: data.items || [] };
+      });
 
-      const videoList = document.getElementById('video-list');
-      videoList.innerHTML = '';
+      const results = await Promise.all(promises);
 
-      if (!data.items || data.items.length === 0) {
-        videoList.innerHTML = '<p>No results found.</p>';
-        return;
-      }
+      results.forEach(({ channel, items }) => {
+        const section = document.createElement('div');
+        section.className = 'channel-section';
+        section.innerHTML = `<h2>${channel.title}</h2>`;
 
-      data.items.forEach(item => {
-        const videoId = item.id.videoId;
-        const title = item.snippet.title;
-        const thumbnail = item.snippet.thumbnails.medium.url;
+        const videoList = document.createElement('div');
+        videoList.className = 'video-list';
 
-        const card = document.createElement('div');
-        card.className = 'video-card';
-        card.innerHTML = `
-          <a href="watch.html?id=${videoId}">
-            <img src="${thumbnail}" alt="${title}">
-            <div>${title}</div>
-          </a>
-        `;
-        videoList.appendChild(card);
+        if (items.length === 0) {
+          videoList.innerHTML = '<p>No results found.</p>';
+        } else {
+          items.forEach(item => {
+            const videoId = item.id.videoId;
+            const title = item.snippet.title;
+            const thumbnail = item.snippet.thumbnails.medium.url;
+
+            const card = document.createElement('div');
+            card.className = 'video-card';
+            card.innerHTML = `
+              <a href="watch.html?id=${videoId}">
+                <img src="${thumbnail}" alt="${title}">
+                <div>${title}</div>
+              </a>
+            `;
+            videoList.appendChild(card);
+          });
+        }
+
+        section.appendChild(videoList);
+        resultsContainer.appendChild(section);
       });
     }
   </script>
