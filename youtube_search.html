@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>YouTube Search</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+
+    #search-form {
+      margin-bottom: 30px;
+    }
+
+    #search-form input {
+      padding: 8px;
+      width: 300px;
+      font-size: 16px;
+    }
+
+    #search-form button {
+      padding: 8px 12px;
+      font-size: 16px;
+    }
+
+    #video-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .video-card {
+      width: 200px;
+      text-align: center;
+    }
+
+    .video-card img {
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+    }
+
+    .video-card a {
+      text-decoration: none;
+      color: #333;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>YouTube Channel Video Search</h1>
+
+  <form id="search-form">
+    <input type="text" id="search-input" placeholder="Search videos..." required />
+    <button type="submit">Search</button>
+  </form>
+
+  <div id="video-list"></div>
+
+  <script>
+    const API_KEY = 'AIzaSyAA5ffcNmPla6nq0WzTu265jUprHJUw9HM';
+    const CHANNEL_ID = 'UCMgbJL73cGG3TxmYafJw5hA';
+    const MAX_RESULTS = 10;
+
+    document.getElementById('search-form').addEventListener('submit', function (event) {
+      event.preventDefault();
+      const query = document.getElementById('search-input').value.trim();
+      if (query) {
+        fetchVideos(query);
+      }
+    });
+
+    async function fetchVideos(query) {
+      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${MAX_RESULTS}&q=${encodeURIComponent(query)}&channelId=${CHANNEL_ID}&key=${API_KEY}`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      const videoList = document.getElementById('video-list');
+      videoList.innerHTML = '';
+
+      if (!data.items || data.items.length === 0) {
+        videoList.innerHTML = '<p>No results found.</p>';
+        return;
+      }
+
+      data.items.forEach(item => {
+        const videoId = item.id.videoId;
+        const title = item.snippet.title;
+        const thumbnail = item.snippet.thumbnails.medium.url;
+
+        const card = document.createElement('div');
+        card.className = 'video-card';
+        card.innerHTML = `
+          <a href="watch.html?id=${videoId}">
+            <img src="${thumbnail}" alt="${title}">
+            <div>${title}</div>
+          </a>
+        `;
+        videoList.appendChild(card);
+      });
+    }
+  </script>
+</body>
+</html>
