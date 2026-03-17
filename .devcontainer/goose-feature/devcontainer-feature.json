@@ -1,0 +1,9 @@
+{
+    "id": "goose-feature",
+    "version": "0.0.1",
+    "name": "Goose Feature",
+    "description": "Goose CLI",
+    "installsAfter": [
+        "ghcr.io/devcontainers/features/common-utils"
+    ]
+}

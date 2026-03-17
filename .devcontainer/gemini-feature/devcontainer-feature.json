@@ -1,0 +1,9 @@
+{
+    "id": "gemini-feature",
+    "version": "0.0.1",
+    "name": "Gemini Feature",
+    "description": "Gemini CLI",
+    "installsAfter": [
+        "ghcr.io/devcontainers/features/node"
+    ]
+}
