@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useApiKey } from '../hooks/useApiKey';
+import ApiKeyModal from '../components/ApiKeyModal';
 
-const API_KEY = 'AIzaSyAA5ffcNmPla6nq0WzTu265jUprHJUw9HM';
 const CHANNELS = [
   { id: 'UCLsooMJoIpl_7ux2jvdPB-Q', title: 'Channel A (UCLsooMJo...)' },
   { id: 'UCMgbJL73cGG3TxmYafJw5hA', title: 'Channel B (UCMgbJL7...)' }
@@ -33,17 +34,25 @@ export default function Search() {
   const videoRefs = useRef<(HTMLAnchorElement | null)[]>([]);
 
   const [error, setError] = useState<string | null>(null);
+  const { apiKey, saveApiKey } = useApiKey();
 
   const searchAllChannels = async (searchQuery: string) => {
+    if (!apiKey) {
+      setError('API key is not set.');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const promises = CHANNELS.map(async (channel) => {
-        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${MAX_RESULTS}&q=${encodeURIComponent(searchQuery)}&channelId=${channel.id}&key=${API_KEY}`;
+        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${MAX_RESULTS}&q=${encodeURIComponent(searchQuery)}&channelId=${channel.id}&key=${apiKey}`;
         const res = await fetch(url);
         const data = await res.json();
         
         if (data.error) {
+          if (data.error.code === 400 && data.error.errors[0].reason === 'keyInvalid') {
+            throw new Error('The provided API key is invalid.');
+          }
           throw new Error(data.error.message || 'YouTube API Error');
         }
         
@@ -108,6 +117,10 @@ export default function Search() {
       videoRefs.current[0].focus();
     }
   }, [results]);
+
+  if (!apiKey) {
+    return <ApiKeyModal onSave={saveApiKey} />;
+  }
 
   return (
     <div className="search-page" style={{ padding: '20px' }}>
