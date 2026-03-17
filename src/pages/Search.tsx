@@ -1,27 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useApiKey } from '../hooks/useApiKey';
 import ApiKeyModal from '../components/ApiKeyModal';
 
-const CHANNELS = [
-  { id: 'UCLsooMJoIpl_7ux2jvdPB-Q', title: 'Channel A (UCLsooMJo...)' },
-  { id: 'UCMgbJL73cGG3TxmYafJw5hA', title: 'Channel B (UCMgbJL7...)' }
-];
+const ALLOWED_CHANNELS_STORAGE_KEY = 'allowed-channels';
 const MAX_RESULTS = 15;
 const COLUMNS = 8;
 
 interface VideoItem {
   id: { videoId: string };
   snippet: {
-    title: string;
+    title:string;
     thumbnails: {
       medium: { url: string };
     };
   };
 }
 
+interface Channel {
+  id: string;
+  title: string;
+}
+
 interface ChannelResults {
-  channel: { id: string; title: string };
+  channel: Channel;
   items: VideoItem[];
 }
 
@@ -35,28 +37,72 @@ export default function Search() {
 
   const [error, setError] = useState<string | null>(null);
   const { apiKey, saveApiKey } = useApiKey();
+  const [channels, setChannels] = useState<Channel[]>([]);
+
+  useEffect(() => {
+    if (!apiKey) return;
+
+    const storedChannelIds = localStorage.getItem(ALLOWED_CHANNELS_STORAGE_KEY);
+    if (storedChannelIds) {
+      const channelIds = JSON.parse(storedChannelIds) as string[];
+
+      if (channelIds.length > 0) {
+        setLoading(true);
+        const fetchChannelDetails = async () => {
+          try {
+            const promises = channelIds.map(async (id) => {
+              const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet&id=${id}&key=${apiKey}`;
+              const res = await fetch(url);
+              const data = await res.json();
+              if (data.items && data.items.length > 0) {
+                return {
+                  id,
+                  title: data.items[0].snippet.title,
+                };
+              }
+              return { id, title: `Unknown Channel (${id})` };
+            });
+            const channelDetails = await Promise.all(promises);
+            setChannels(channelDetails);
+          } catch (err) {
+            setError('Failed to fetch channel details.');
+          } finally {
+            setLoading(false);
+          }
+        };
+        fetchChannelDetails();
+      }
+    }
+  }, [apiKey]);
 
   const searchAllChannels = async (searchQuery: string) => {
     if (!apiKey) {
       setError('API key is not set.');
       return;
     }
+    if (channels.length === 0) {
+      setError("No channels configured. Please add channels in the admin page.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const promises = CHANNELS.map(async (channel) => {
-        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${MAX_RESULTS}&q=${encodeURIComponent(searchQuery)}&channelId=${channel.id}&key=${apiKey}`;
-        const res = await fetch(url);
-        const data = await res.json();
-        
-        if (data.error) {
-          if (data.error.code === 400 && data.error.errors[0].reason === 'keyInvalid') {
-            throw new Error('The provided API key is invalid.');
+      const promises = channels.map(async (channel) => {
+        try {
+          const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${MAX_RESULTS}&q=${encodeURIComponent(searchQuery)}&channelId=${channel.id}&key=${apiKey}`;
+          const res = await fetch(url);
+          const data = await res.json();
+          
+          if (data.error) {
+            console.error(`Error fetching videos for channel ${channel.id}:`, data.error.message);
+            return { channel, items: [] };
           }
-          throw new Error(data.error.message || 'YouTube API Error');
+          
+          return { channel, items: data.items || [] };
+        } catch (err) {
+          console.error(`Failed to process search for channel ${channel.id}:`, err);
+          return { channel, items: [] };
         }
-        
-        return { channel, items: data.items || [] };
       });
 
       const searchResults = await Promise.all(promises);
@@ -124,6 +170,11 @@ export default function Search() {
 
   return (
     <div className="search-page" style={{ padding: '20px' }}>
+      <div style={{ position: 'absolute', top: '20px', right: '20px' }}>
+        <Link to="/admin" style={{ textDecoration: 'none', color: 'blue' }}>
+          Admin
+        </Link>
+      </div>
       <h1>YouTube Multi-Channel Search</h1>
       <div className="hint" style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
         Press <strong>0</strong> on your remote to focus the search box
@@ -146,6 +197,13 @@ export default function Search() {
       {error && (
         <div style={{ color: 'red', padding: '20px', border: '1px solid red', borderRadius: '6px', marginBottom: '20px', backgroundColor: '#fff5f5' }}>
           <strong>Error:</strong> {error}
+        </div>
+      )}
+
+      {channels.length === 0 && !loading && (
+        <div style={{ padding: '20px', backgroundColor: '#f0f0f0' }}>
+          <h2>No channels configured</h2>
+          <p>Please go to the <Link to="/admin">Admin Page</Link> to add some YouTube channels.</p>
         </div>
       )}
 
