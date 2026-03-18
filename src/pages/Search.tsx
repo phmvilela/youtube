@@ -1,8 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useApiKey } from '../hooks/useApiKey';
 import ApiKeyModal from '../components/ApiKeyModal';
 import FlexSearch from 'flexsearch';
+import {
+  Container,
+  Typography,
+  TextField,
+  Button,
+  Box,
+  Card,
+  CardMedia,
+  CardContent,
+  CardActionArea,
+  AppBar,
+  Toolbar,
+  Paper,
+  IconButton
+} from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
+import SettingsIcon from '@mui/icons-material/Settings';
 
 const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
 const COLUMNS = 8;
@@ -27,7 +44,7 @@ export default function Search() {
   const [searchIndex, setSearchIndex] = useState<any>(null);
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const videoRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+  const videoRefs = useRef<(HTMLElement | null)[]>([]);
 
   const { apiKey, saveApiKey } = useApiKey();
 
@@ -72,12 +89,7 @@ export default function Search() {
   }, []);
 
   const handleSearch = (searchQuery: string) => {
-    if (!searchIndex) {
-      setResults([]);
-      return;
-    }
-
-    if (!searchQuery.trim()) {
+    if (!searchIndex || !searchQuery.trim()) {
       setResults([]);
       return;
     }
@@ -95,7 +107,6 @@ export default function Search() {
 
     const filteredVideos = Array.from(uniqueVideos.values());
 
-    // Group by channel
     const groupedMap: Record<string, SyncedVideo[]> = {};
     filteredVideos.forEach(video => {
       if (!groupedMap[video.channelName]) {
@@ -120,7 +131,7 @@ export default function Search() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const current = document.activeElement;
-      const index = videoRefs.current.indexOf(current as HTMLAnchorElement);
+      const index = videoRefs.current.indexOf(current as HTMLElement);
 
       if (event.key === '0' || event.keyCode === 48 || event.keyCode === 10009) {
         searchInputRef.current?.focus();
@@ -164,84 +175,131 @@ export default function Search() {
   }
 
   return (
-    <div className="search-page" style={{ padding: '20px' }}>
-      <div style={{ position: 'absolute', top: '20px', right: '20px' }}>
-        <Link to="/admin" style={{ textDecoration: 'none', color: 'blue' }}>
-          Admin
-        </Link>
-      </div>
-      <h1>YouTube Offline Search</h1>
-      <div className="hint" style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
-        Press <strong>0</strong> on your remote to focus the search box. Searching local copy.
-      </div>
+    <Box sx={{ pb: 8 }}>
+      <AppBar position="static" color="transparent" elevation={0}>
+        <Toolbar sx={{ justifyContent: 'space-between' }}>
+          <Typography variant="h5" component="h1" fontWeight="bold">
+            YouTube Offline
+          </Typography>
+          <IconButton component={RouterLink} to="/admin" color="inherit" aria-label="admin">
+            <SettingsIcon />
+          </IconButton>
+        </Toolbar>
+      </AppBar>
 
-      <form onSubmit={handleSubmit} style={{ marginBottom: '30px' }}>
-        <input
-          ref={searchInputRef}
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search offline videos..."
-          required
-          style={{ padding: '8px', width: '300px', fontSize: '16px', border: '2px solid #ccc', borderRadius: '6px' }}
-        />
-        <button type="submit" style={{ padding: '8px 12px', fontSize: '16px' }}>Search</button>
-      </form>
+      <Container maxWidth={false}>
+        <Box sx={{ mb: 4, mt: 2, textAlign: 'center' }}>
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            Press <strong>0</strong> on your remote to focus the search box. Searching local copy.
+          </Typography>
 
-      {results.length === 0 && query && (
-        <div style={{ padding: '20px', backgroundColor: '#f0f0f0' }}>
-          <h2>No matches found</h2>
-          <p>Try a different search term or sync videos in the <Link to="/admin">Admin Page</Link>.</p>
-        </div>
-      )}
+          <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2 }}>
+            <TextField
+              inputRef={searchInputRef}
+              variant="outlined"
+              placeholder="Search offline videos..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              required
+              size="small"
+              sx={{ width: { xs: '100%', sm: 400 } }}
+              InputProps={{
+                startAdornment: <SearchIcon color="action" sx={{ mr: 1 }} />
+              }}
+            />
+            <Button variant="contained" type="submit" size="large" disableElevation>
+              Search
+            </Button>
+          </Box>
+        </Box>
 
-      {results.length === 0 && !query && (
-        <div style={{ padding: '20px', backgroundColor: '#f0f0f0' }}>
-          <h2>Ready to search</h2>
-          <p>Please enter a query above. Make sure you have synced videos in the <Link to="/admin">Admin Page</Link>.</p>
-        </div>
-      )}
+        {results.length === 0 && query && (
+          <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 2 }}>
+            <Typography variant="h6" gutterBottom>No matches found</Typography>
+            <Typography variant="body1" color="text.secondary">
+              Try a different search term or sync videos in the <RouterLink to="/admin" style={{ color: 'inherit' }}>Admin Page</RouterLink>.
+            </Typography>
+          </Paper>
+        )}
 
-      <div id="results-container">
-        {results.map((res, channelIdx) => (
-          <div key={res.channelName} className="channel-section" style={{ marginBottom: '50px' }}>
-            <h2>{res.channelName}</h2>
-            <div className="video-list" style={{ display: 'grid', gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`, gap: '16px' }}>
-              {res.items.map((item, videoIdx) => {
-                const globalIdx = results.slice(0, channelIdx).reduce((acc, curr) => acc + curr.items.length, 0) + videoIdx;
-                return (
-                  <a
-                    key={item.videoId}
-                    href={`/watch/${item.videoId}`}
-                    className="video-card"
-                    tabIndex={0}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      navigate(`/watch/${item.videoId}`);
-                    }}
-                    ref={(el) => (videoRefs.current[globalIdx] = el)}
-                    style={{ display: 'block', textAlign: 'center', textDecoration: 'none', color: '#333', fontWeight: 'bold', borderRadius: '8px' }}
-                  >
-                    {item.thumbnail ? (
-                        <img src={item.thumbnail} alt={item.title} style={{ width: '100%', borderRadius: '8px' }} />
-                    ) : (
-                        <div style={{ width: '100%', height: '100px', backgroundColor: '#ddd', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>No Thumbnail</div>
-                    )}
-                    <div style={{ fontSize: '12px', marginTop: '5px' }}>{item.title}</div>
-                  </a>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
+        {results.length === 0 && !query && (
+          <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 2 }}>
+            <Typography variant="h6" gutterBottom>Ready to search</Typography>
+            <Typography variant="body1" color="text.secondary">
+              Please enter a query above. Make sure you have synced videos in the <RouterLink to="/admin" style={{ color: 'inherit' }}>Admin Page</RouterLink>.
+            </Typography>
+          </Paper>
+        )}
 
-      <style>{`
-        .video-card:focus {
-          outline: 4px solid #2196f3;
-          background-color: #eef6ff;
-        }
-      `}</style>
-    </div>
+        <Box id="results-container">
+          {results.map((res, channelIdx) => (
+            <Box key={res.channelName} sx={{ mb: 6 }}>
+              <Typography variant="h6" component="h2" sx={{ mb: 2, fontWeight: 'bold' }}>
+                {res.channelName}
+              </Typography>
+              <Box sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`, 
+                gap: 2 
+              }}>
+                {res.items.map((item, videoIdx) => {
+                  const globalIdx = results.slice(0, channelIdx).reduce((acc, curr) => acc + curr.items.length, 0) + videoIdx;
+                  return (
+                    <Card 
+                      key={item.videoId} 
+                      sx={{ 
+                        height: '100%', 
+                        display: 'flex', 
+                        flexDirection: 'column',
+                        '&:focus-within': {
+                          outline: '4px solid #3ea6ff',
+                        }
+                      }}
+                    >
+                      <CardActionArea 
+                        component="a"
+                        href={`/watch/${item.videoId}`}
+                        onClick={(e: React.MouseEvent) => {
+                          e.preventDefault();
+                          navigate(`/watch/${item.videoId}`);
+                        }}
+                        ref={(el: any) => (videoRefs.current[globalIdx] = el)}
+                        sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'flex-start' }}
+                      >
+                        {item.thumbnail ? (
+                          <CardMedia
+                            component="img"
+                            image={item.thumbnail}
+                            alt={item.title}
+                            sx={{ aspectRatio: '16/9', objectFit: 'cover' }}
+                          />
+                        ) : (
+                          <Box sx={{ width: '100%', aspectRatio: '16/9', bgcolor: 'grey.800', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Typography variant="caption" color="text.secondary">No Thumbnail</Typography>
+                          </Box>
+                        )}
+                        <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                          <Typography variant="body2" component="div" sx={{ 
+                            display: '-webkit-box', 
+                            WebkitLineClamp: 2, 
+                            WebkitBoxOrient: 'vertical', 
+                            overflow: 'hidden',
+                            fontWeight: 500,
+                            lineHeight: 1.2,
+                            fontSize: '0.85rem'
+                          }}>
+                            {item.title}
+                          </Typography>
+                        </CardContent>
+                      </CardActionArea>
+                    </Card>
+                  );
+                })}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      </Container>
+    </Box>
   );
 }

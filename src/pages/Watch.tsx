@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Box, Button, Typography, AppBar, Toolbar } from '@mui/material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 declare global {
   interface Window {
@@ -17,7 +20,6 @@ export default function Watch() {
   const [apiReady, setApiReady] = useState(false);
 
   useEffect(() => {
-    // Load YouTube API script if not already present
     if (!window.YT) {
       const tag = document.createElement('script');
       tag.src = 'https://www.youtube.com/iframe_api';
@@ -104,28 +106,38 @@ export default function Watch() {
   }, [navigate]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#000', color: '#fff' }}>
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', padding: '16px', background: '#111', zIndex: 2 }}>
-        <button
-          ref={playBtnRef}
-          onClick={() => playerRef.current?.playVideo()}
-          style={{ padding: '14px 24px', fontSize: '16px', backgroundColor: '#00bcd4', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
-        >
-          Play Video
-        </button>
-        <button
-          onClick={() => navigate('/')}
-          style={{ padding: '14px 24px', fontSize: '16px', backgroundColor: '#00bcd4', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
-        >
-          Return to Search
-        </button>
-      </div>
-      <div style={{ flex: 1, position: 'relative', width: '100%' }} ref={containerRef}>
-        <div id="player" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}></div>
-      </div>
-      <div style={{ textAlign: 'center', fontSize: '14px', color: '#aaa', padding: '10px', background: '#111' }}>
-        Arrows: ⬅️/➡️ seek 10s, ⬆️/⬇️ volume ±10% &nbsp;|&nbsp; Space: Play/Pause &nbsp;|&nbsp; 1: Return to Search
-      </div>
-    </div>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: 'black', color: 'white' }}>
+      <AppBar position="static" color="transparent" elevation={0} sx={{ zIndex: 2, bgcolor: 'background.paper' }}>
+        <Toolbar sx={{ justifyContent: 'center', gap: 2 }}>
+          <Button
+            ref={playBtnRef}
+            variant="contained"
+            color="primary"
+            startIcon={<PlayArrowIcon />}
+            onClick={() => playerRef.current?.playVideo()}
+          >
+            Play Video
+          </Button>
+          <Button
+            variant="outlined"
+            color="inherit"
+            startIcon={<ArrowBackIcon />}
+            onClick={() => navigate('/')}
+          >
+            Return to Search
+          </Button>
+        </Toolbar>
+      </AppBar>
+      
+      <Box sx={{ flex: 1, position: 'relative', width: '100%' }} ref={containerRef}>
+        <Box id="player" sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
+      </Box>
+      
+      <Box sx={{ textAlign: 'center', p: 1.5, bgcolor: 'background.paper', color: 'text.secondary' }}>
+        <Typography variant="body2">
+          Arrows: ⬅️/➡️ seek 10s, ⬆️/⬇️ volume ±10% &nbsp;|&nbsp; Space: Play/Pause &nbsp;|&nbsp; 1: Return to Search
+        </Typography>
+      </Box>
+    </Box>
   );
 }
