@@ -87,7 +87,7 @@ export default function Admin() {
         let pageToken = '';
         let pagesFetched = 0;
         
-        while (pagesFetched < 3) {
+        while (true) {
           setSyncStatus(`Fetching videos for channel ${channelId} (Page ${pagesFetched + 1})...`);
           const pageTokenParam = pageToken ? `&pageToken=${pageToken}` : '';
           const playlistRes = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50${pageTokenParam}&key=${apiKey}`);
