@@ -1,125 +1,70 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useApiKey } from '../hooks/useApiKey';
 import ApiKeyModal from '../components/ApiKeyModal';
 
-const ALLOWED_CHANNELS_STORAGE_KEY = 'allowed-channels';
-const MAX_RESULTS = 15;
+const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
 const COLUMNS = 8;
 
-interface VideoItem {
-  id: { videoId: string };
-  snippet: {
-    title:string;
-    thumbnails: {
-      medium: { url: string };
-    };
-  };
-}
-
-interface Channel {
-  id: string;
+interface SyncedVideo {
+  videoId: string;
   title: string;
+  channelName: string;
+  channelId: string;
+  publishedAt: string;
+  thumbnail?: string;
 }
 
-interface ChannelResults {
-  channel: Channel;
-  items: VideoItem[];
+interface GroupedResults {
+  channelName: string;
+  items: SyncedVideo[];
 }
 
 export default function Search() {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<ChannelResults[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<GroupedResults[]>([]);
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const videoRefs = useRef<(HTMLAnchorElement | null)[]>([]);
 
-  const [error, setError] = useState<string | null>(null);
   const { apiKey, saveApiKey } = useApiKey();
-  const [channels, setChannels] = useState<Channel[]>([]);
 
-  useEffect(() => {
-    if (!apiKey) return;
+  const handleSearch = (searchQuery: string) => {
+    const storedVideosStr = localStorage.getItem(SYNCED_VIDEOS_STORAGE_KEY);
+    if (!storedVideosStr) {
+      setResults([]);
+      return;
+    }
 
-    const storedChannelIds = localStorage.getItem(ALLOWED_CHANNELS_STORAGE_KEY);
-    if (storedChannelIds) {
-      const channelIds = JSON.parse(storedChannelIds) as string[];
+    const allVideos: SyncedVideo[] = JSON.parse(storedVideosStr);
+    const lowerQuery = searchQuery.toLowerCase();
 
-      if (channelIds.length > 0) {
-        setLoading(true);
-        const fetchChannelDetails = async () => {
-          try {
-            const promises = channelIds.map(async (id) => {
-              const url = `https://www.googleapis.com/youtube/v3/channels?part=snippet&id=${id}&key=${apiKey}`;
-              const res = await fetch(url);
-              const data = await res.json();
-              if (data.items && data.items.length > 0) {
-                return {
-                  id,
-                  title: data.items[0].snippet.title,
-                };
-              }
-              return { id, title: `Unknown Channel (${id})` };
-            });
-            const channelDetails = await Promise.all(promises);
-            setChannels(channelDetails);
-          } catch (err) {
-            setError('Failed to fetch channel details.');
-          } finally {
-            setLoading(false);
-          }
-        };
-        fetchChannelDetails();
+    // Filter videos where title or channelName matches the query
+    const filteredVideos = allVideos.filter(video => 
+      video.title.toLowerCase().includes(lowerQuery) || 
+      video.channelName.toLowerCase().includes(lowerQuery)
+    );
+
+    // Group by channel
+    const groupedMap: Record<string, SyncedVideo[]> = {};
+    filteredVideos.forEach(video => {
+      if (!groupedMap[video.channelName]) {
+        groupedMap[video.channelName] = [];
       }
-    }
-  }, [apiKey]);
+      groupedMap[video.channelName].push(video);
+    });
 
-  const searchAllChannels = async (searchQuery: string) => {
-    if (!apiKey) {
-      setError('API key is not set.');
-      return;
-    }
-    if (channels.length === 0) {
-      setError("No channels configured. Please add channels in the admin page.");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const promises = channels.map(async (channel) => {
-        try {
-          const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${MAX_RESULTS}&q=${encodeURIComponent(searchQuery)}&channelId=${channel.id}&key=${apiKey}`;
-          const res = await fetch(url);
-          const data = await res.json();
-          
-          if (data.error) {
-            console.error(`Error fetching videos for channel ${channel.id}:`, data.error.message);
-            return { channel, items: [] };
-          }
-          
-          return { channel, items: data.items || [] };
-        } catch (err) {
-          console.error(`Failed to process search for channel ${channel.id}:`, err);
-          return { channel, items: [] };
-        }
-      });
+    const groupedResults: GroupedResults[] = Object.keys(groupedMap).map(channelName => ({
+      channelName,
+      items: groupedMap[channelName]
+    }));
 
-      const searchResults = await Promise.all(promises);
-      setResults(searchResults);
-    } catch (err: any) {
-      console.error('Search failed:', err);
-      setError(err.message || 'An unknown error occurred');
-    } finally {
-      setLoading(false);
-    }
+    setResults(groupedResults);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (query.trim()) {
-      searchAllChannels(query);
-    }
+    handleSearch(query);
   };
 
   useEffect(() => {
@@ -175,9 +120,9 @@ export default function Search() {
           Admin
         </Link>
       </div>
-      <h1>YouTube Multi-Channel Search</h1>
+      <h1>YouTube Offline Search</h1>
       <div className="hint" style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
-        Press <strong>0</strong> on your remote to focus the search box
+        Press <strong>0</strong> on your remote to focus the search box. Searching local copy.
       </div>
 
       <form onSubmit={handleSubmit} style={{ marginBottom: '30px' }}>
@@ -186,49 +131,53 @@ export default function Search() {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search videos..."
+          placeholder="Search offline videos..."
           required
           style={{ padding: '8px', width: '300px', fontSize: '16px', border: '2px solid #ccc', borderRadius: '6px' }}
         />
         <button type="submit" style={{ padding: '8px 12px', fontSize: '16px' }}>Search</button>
       </form>
 
-      {loading && <p>Loading...</p>}
-      {error && (
-        <div style={{ color: 'red', padding: '20px', border: '1px solid red', borderRadius: '6px', marginBottom: '20px', backgroundColor: '#fff5f5' }}>
-          <strong>Error:</strong> {error}
+      {results.length === 0 && query && (
+        <div style={{ padding: '20px', backgroundColor: '#f0f0f0' }}>
+          <h2>No matches found</h2>
+          <p>Try a different search term or sync videos in the <Link to="/admin">Admin Page</Link>.</p>
         </div>
       )}
 
-      {channels.length === 0 && !loading && (
+      {results.length === 0 && !query && (
         <div style={{ padding: '20px', backgroundColor: '#f0f0f0' }}>
-          <h2>No channels configured</h2>
-          <p>Please go to the <Link to="/admin">Admin Page</Link> to add some YouTube channels.</p>
+          <h2>Ready to search</h2>
+          <p>Please enter a query above. Make sure you have synced videos in the <Link to="/admin">Admin Page</Link>.</p>
         </div>
       )}
 
       <div id="results-container">
         {results.map((res, channelIdx) => (
-          <div key={res.channel.id} className="channel-section" style={{ marginBottom: '50px' }}>
-            <h2>{res.channel.title}</h2>
+          <div key={res.channelName} className="channel-section" style={{ marginBottom: '50px' }}>
+            <h2>{res.channelName}</h2>
             <div className="video-list" style={{ display: 'grid', gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`, gap: '16px' }}>
               {res.items.map((item, videoIdx) => {
                 const globalIdx = results.slice(0, channelIdx).reduce((acc, curr) => acc + curr.items.length, 0) + videoIdx;
                 return (
                   <a
-                    key={item.id.videoId}
-                    href={`/watch/${item.id.videoId}`}
+                    key={item.videoId}
+                    href={`/watch/${item.videoId}`}
                     className="video-card"
                     tabIndex={0}
                     onClick={(e) => {
                       e.preventDefault();
-                      navigate(`/watch/${item.id.videoId}`);
+                      navigate(`/watch/${item.videoId}`);
                     }}
                     ref={(el) => (videoRefs.current[globalIdx] = el)}
                     style={{ display: 'block', textAlign: 'center', textDecoration: 'none', color: '#333', fontWeight: 'bold', borderRadius: '8px' }}
                   >
-                    <img src={item.snippet.thumbnails.medium.url} alt={item.snippet.title} style={{ width: '100%', borderRadius: '8px' }} />
-                    <div style={{ fontSize: '12px', marginTop: '5px' }}>{item.snippet.title}</div>
+                    {item.thumbnail ? (
+                        <img src={item.thumbnail} alt={item.title} style={{ width: '100%', borderRadius: '8px' }} />
+                    ) : (
+                        <div style={{ width: '100%', height: '100px', backgroundColor: '#ddd', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>No Thumbnail</div>
+                    )}
+                    <div style={{ fontSize: '12px', marginTop: '5px' }}>{item.title}</div>
                   </a>
                 );
               })}

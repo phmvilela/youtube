@@ -1,9 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useApiKey } from '../hooks/useApiKey';
 
 const ALLOWED_CHANNELS_STORAGE_KEY = 'allowed-channels';
+const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
 
 export default function Admin() {
   const [channels, setChannels] = useState<string[]>(['']);
+  const { apiKey } = useApiKey();
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('');
 
   useEffect(() => {
     const storedChannels = localStorage.getItem(ALLOWED_CHANNELS_STORAGE_KEY);
@@ -36,6 +41,85 @@ export default function Admin() {
     alert('Channels saved!');
   };
 
+  const handleSyncVideos = async () => {
+    if (!apiKey) {
+      alert('API Key is missing. Please set it first.');
+      return;
+    }
+    
+    const storedChannelsStr = localStorage.getItem(ALLOWED_CHANNELS_STORAGE_KEY);
+    if (!storedChannelsStr) {
+      alert('No channels saved. Please save channels first.');
+      return;
+    }
+    
+    const storedChannels: string[] = JSON.parse(storedChannelsStr);
+    if (!Array.isArray(storedChannels) || storedChannels.length === 0) {
+      alert('No valid channels to sync.');
+      return;
+    }
+    
+    setIsSyncing(true);
+    setSyncStatus('Starting sync...');
+    
+    const allVideos = [];
+    
+    for (const channelId of storedChannels) {
+      if (!channelId) continue;
+      try {
+        setSyncStatus(`Fetching uploads playlist for ${channelId}...`);
+        
+        const channelRes = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${apiKey}`);
+        const channelData = await channelRes.json();
+        
+        if (channelData.error) {
+           console.error(`YouTube API Error for ${channelId}:`, channelData.error);
+           continue;
+        }
+
+        const uploadsPlaylistId = channelData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+        if (!uploadsPlaylistId) {
+          console.warn(`No uploads playlist found for channel ${channelId}`);
+          continue;
+        }
+        
+        let pageToken = '';
+        let pagesFetched = 0;
+        
+        while (pagesFetched < 3) {
+          setSyncStatus(`Fetching videos for channel ${channelId} (Page ${pagesFetched + 1})...`);
+          const pageTokenParam = pageToken ? `&pageToken=${pageToken}` : '';
+          const playlistRes = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50${pageTokenParam}&key=${apiKey}`);
+          const playlistData = await playlistRes.json();
+          
+          if (!playlistData.items || playlistData.items.length === 0) break;
+          
+          for (const item of playlistData.items) {
+            allVideos.push({
+              videoId: item.snippet.resourceId.videoId,
+              title: item.snippet.title,
+              channelName: item.snippet.channelTitle,
+              channelId: item.snippet.channelId,
+              publishedAt: item.snippet.publishedAt,
+              thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
+            });
+          }
+          
+          pageToken = playlistData.nextPageToken;
+          pagesFetched++;
+          
+          if (!pageToken) break;
+        }
+      } catch (e) {
+        console.error(`Error syncing channel ${channelId}:`, e);
+      }
+    }
+    
+    localStorage.setItem(SYNCED_VIDEOS_STORAGE_KEY, JSON.stringify(allVideos));
+    setSyncStatus(`Sync complete! Saved metadata for ${allVideos.length} videos.`);
+    setIsSyncing(false);
+  };
+
   return (
     <div style={{ padding: '20px' }}>
       <h1>Admin - Allowed Channels</h1>
@@ -56,9 +140,30 @@ export default function Admin() {
       <button onClick={handleAddChannel} style={{ padding: '8px 12px', fontSize: '16px', marginRight: '10px' }}>
         Add Channel
       </button>
-      <button onClick={handleSave} style={{ padding: '8px 12px', fontSize: '16px', background: 'green', color: 'white' }}>
+      <button onClick={handleSave} style={{ padding: '8px 12px', fontSize: '16px', background: 'green', color: 'white', border: 'none', cursor: 'pointer' }}>
         Save Channels
       </button>
+
+      <div style={{ marginTop: '30px', borderTop: '1px solid #ccc', paddingTop: '20px' }}>
+        <h2>Sync Channel Content</h2>
+        <p>Downloads metadata of recent uploads from configured channels for offline search.</p>
+        <button 
+          onClick={handleSyncVideos} 
+          disabled={isSyncing}
+          style={{ 
+            padding: '8px 12px', 
+            fontSize: '16px', 
+            background: isSyncing ? '#aaa' : '#007bff', 
+            color: 'white', 
+            border: 'none', 
+            cursor: isSyncing ? 'not-allowed' : 'pointer',
+            borderRadius: '4px'
+          }}
+        >
+          {isSyncing ? 'Syncing...' : 'Sync Videos Data'}
+        </button>
+        {syncStatus && <p style={{ marginTop: '10px', fontWeight: 'bold' }}>{syncStatus}</p>}
+      </div>
     </div>
   );
 }
