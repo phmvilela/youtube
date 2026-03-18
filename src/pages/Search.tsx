@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useApiKey } from '../hooks/useApiKey';
 import ApiKeyModal from '../components/ApiKeyModal';
+import FlexSearch from 'flexsearch';
 
 const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
 const COLUMNS = 8;
@@ -23,27 +24,76 @@ interface GroupedResults {
 export default function Search() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<GroupedResults[]>([]);
+  const [searchIndex, setSearchIndex] = useState<any>(null);
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const videoRefs = useRef<(HTMLAnchorElement | null)[]>([]);
 
   const { apiKey, saveApiKey } = useApiKey();
 
-  const handleSearch = (searchQuery: string) => {
+  useEffect(() => {
     const storedVideosStr = localStorage.getItem(SYNCED_VIDEOS_STORAGE_KEY);
-    if (!storedVideosStr) {
+    const indexDataStr = localStorage.getItem('flexsearch-index');
+    
+    if (storedVideosStr) {
+      const doc = new FlexSearch.Document({
+        document: {
+          id: "videoId",
+          index: ["title", "channelName"],
+          store: true
+        }
+      });
+      
+      let indexLoaded = false;
+      if (indexDataStr) {
+        try {
+          const indexData = JSON.parse(indexDataStr);
+          for (const key of Object.keys(indexData)) {
+            doc.import(key, indexData[key]);
+          }
+          indexLoaded = true;
+        } catch (err) {
+          console.error("Failed to load FlexSearch index:", err);
+        }
+      }
+      
+      if (!indexLoaded) {
+        try {
+          const allVideos = JSON.parse(storedVideosStr);
+          for (const video of allVideos) {
+            doc.add(video);
+          }
+        } catch (err) {
+          console.error("Failed to build fallback index:", err);
+        }
+      }
+      setSearchIndex(doc);
+    }
+  }, []);
+
+  const handleSearch = (searchQuery: string) => {
+    if (!searchIndex) {
       setResults([]);
       return;
     }
 
-    const allVideos: SyncedVideo[] = JSON.parse(storedVideosStr);
-    const lowerQuery = searchQuery.toLowerCase();
+    if (!searchQuery.trim()) {
+      setResults([]);
+      return;
+    }
 
-    // Filter videos where title or channelName matches the query
-    const filteredVideos = allVideos.filter(video => 
-      video.title.toLowerCase().includes(lowerQuery) || 
-      video.channelName.toLowerCase().includes(lowerQuery)
-    );
+    const searchResults = searchIndex.search(searchQuery, { enrich: true });
+    
+    const uniqueVideos = new Map<string, SyncedVideo>();
+    for (const fieldResult of searchResults) {
+      for (const item of fieldResult.result) {
+        if (item.doc && !uniqueVideos.has(item.id)) {
+          uniqueVideos.set(item.id as string, item.doc as SyncedVideo);
+        }
+      }
+    }
+
+    const filteredVideos = Array.from(uniqueVideos.values());
 
     // Group by channel
     const groupedMap: Record<string, SyncedVideo[]> = {};

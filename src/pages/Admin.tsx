@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApiKey } from '../hooks/useApiKey';
+import FlexSearch from 'flexsearch';
 
 const ALLOWED_CHANNELS_STORAGE_KEY = 'allowed-channels';
 const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
@@ -113,6 +114,31 @@ export default function Admin() {
       } catch (e) {
         console.error(`Error syncing channel ${channelId}:`, e);
       }
+    }
+    
+    setSyncStatus('Building local search index...');
+    try {
+      const doc = new FlexSearch.Document({
+        document: {
+          id: "videoId",
+          index: ["title", "channelName"],
+          store: true
+        }
+      });
+
+      for (const video of allVideos) {
+        doc.add(video);
+      }
+
+      const indexData: Record<string, any> = {};
+      await doc.export((key, data) => {
+        if (data) {
+          indexData[key.toString()] = data;
+        }
+      });
+      localStorage.setItem('flexsearch-index', JSON.stringify(indexData));
+    } catch (err) {
+      console.error('Error building search index:', err);
     }
     
     localStorage.setItem(SYNCED_VIDEOS_STORAGE_KEY, JSON.stringify(allVideos));
