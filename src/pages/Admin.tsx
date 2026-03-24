@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useApiKey } from '../hooks/useApiKey';
 import FlexSearch from 'flexsearch';
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, writeBatch, doc, setLogLevel } from "firebase/firestore";
+import { getFirestore, collection, writeBatch, doc } from "firebase/firestore";
 import { firestoreConfig } from '../firestore.config';
 
 const ALLOWED_CHANNELS_STORAGE_KEY = 'allowed-channels';
@@ -10,9 +10,7 @@ const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firestoreConfig);
-const db = getFirestore(firebaseApp);
-setLogLevel('debug');
-
+const db = getFirestore(firebaseApp, firestoreConfig.databaseId);
 
 export default function Admin() {
   const [channels, setChannels] = useState<string[]>(['']);

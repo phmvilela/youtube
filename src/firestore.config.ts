@@ -6,8 +6,6 @@ export const firestoreConfig = {
   messagingSenderId: "944053436879",
   appId: "1:944053436879:web:f3071d69b410dc63a452ba",
   measurementId: "G-BHXC7NC6EB",
-  
-  // The following are not part of the standard firebase config, 
-  // but are used by the application to specify where to sync the data
-  collectionName: "videos"
+  collectionName: "videos",
+  databaseId: "youtube-kids"
 };
