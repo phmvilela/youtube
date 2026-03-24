@@ -1,9 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useApiKey } from '../hooks/useApiKey';
 import FlexSearch from 'flexsearch';
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, writeBatch, doc, setLogLevel } from "firebase/firestore";
+import { firestoreConfig } from '../firestore.config';
 
 const ALLOWED_CHANNELS_STORAGE_KEY = 'allowed-channels';
 const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
+
+// Initialize Firebase
+const firebaseApp = initializeApp(firestoreConfig);
+const db = getFirestore(firebaseApp);
+setLogLevel('debug');
+
 
 export default function Admin() {
   const [channels, setChannels] = useState<string[]>(['']);
@@ -142,7 +151,28 @@ export default function Admin() {
     }
     
     localStorage.setItem(SYNCED_VIDEOS_STORAGE_KEY, JSON.stringify(allVideos));
-    setSyncStatus(`Sync complete! Saved metadata for ${allVideos.length} videos.`);
+    setSyncStatus(`Sync complete! Saved metadata for ${allVideos.length} videos locally.`);
+
+    setSyncStatus(`Syncing ${allVideos.length} videos to Firestore...`);
+    try {
+        const videosCollection = collection(db, firestoreConfig.collectionName);
+        const chunkSize = 500;
+        for (let i = 0; i < allVideos.length; i += chunkSize) {
+            const chunk = allVideos.slice(i, i + chunkSize);
+            const batch = writeBatch(db);
+            chunk.forEach((video) => {
+                const videoDocRef = doc(videosCollection, video.videoId);
+                batch.set(videoDocRef, video);
+            });
+            await batch.commit();
+            setSyncStatus(`Synced ${i + chunk.length} of ${allVideos.length} videos to Firestore...`);
+        }
+        setSyncStatus(`Successfully synced ${allVideos.length} videos to Firestore.`);
+    } catch (error) {
+        console.error("Error syncing to Firestore:", error);
+        setSyncStatus("An error occurred while syncing to Firestore.");
+    }
+
     setIsSyncing(false);
   };
 
@@ -172,7 +202,7 @@ export default function Admin() {
 
       <div style={{ marginTop: '30px', borderTop: '1px solid #ccc', paddingTop: '20px' }}>
         <h2>Sync Channel Content</h2>
-        <p>Downloads metadata of recent uploads from configured channels for offline search.</p>
+        <p>Downloads metadata of recent uploads from configured channels for offline search and syncs to Firestore.</p>
         <button 
           onClick={handleSyncVideos} 
           disabled={isSyncing}
@@ -186,7 +216,7 @@ export default function Admin() {
             borderRadius: '4px'
           }}
         >
-          {isSyncing ? 'Syncing...' : 'Sync Videos Data'}
+          {isSyncing ? 'Syncing...' : 'Sync Videos to Local and Firestore'}
         </button>
         {syncStatus && <p style={{ marginTop: '10px', fontWeight: 'bold' }}>{syncStatus}</p>}
       </div>
