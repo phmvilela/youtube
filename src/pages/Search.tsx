@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useApiKey } from '../hooks/useApiKey';
 import ApiKeyModal from '../components/ApiKeyModal';
-import FlexSearch from 'flexsearch';
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, getDocs, query, where } from "firebase/firestore";
+import { firestoreConfig } from '../firestore.config';
 import {
   Container,
   Typography,
@@ -21,7 +23,9 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import SettingsIcon from '@mui/icons-material/Settings';
 
-const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
+const firebaseApp = initializeApp(firestoreConfig);
+const db = getFirestore(firebaseApp, firestoreConfig.databaseId);
+
 const COLUMNS = 8;
 
 interface SyncedVideo {
@@ -31,6 +35,7 @@ interface SyncedVideo {
   channelId: string;
   publishedAt: string;
   thumbnail?: string;
+  searchWords?: string[];
 }
 
 interface GroupedResults {
@@ -39,93 +44,92 @@ interface GroupedResults {
 }
 
 export default function Search() {
-  const [query, setQuery] = useState('');
+  const [queryText, setQueryText] = useState('');
   const [results, setResults] = useState<GroupedResults[]>([]);
-  const [searchIndex, setSearchIndex] = useState<any>(null);
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const videoRefs = useRef<(HTMLElement | null)[]>([]);
 
   const { apiKey, saveApiKey } = useApiKey();
 
-  useEffect(() => {
-    const storedVideosStr = localStorage.getItem(SYNCED_VIDEOS_STORAGE_KEY);
-    const indexDataStr = localStorage.getItem('flexsearch-index');
-    
-    if (storedVideosStr) {
-      const doc = new FlexSearch.Document({
-        document: {
-          id: "videoId",
-          index: ["title", "channelName"],
-          store: true
-        }
-      });
-      
-      let indexLoaded = false;
-      if (indexDataStr) {
-        try {
-          const indexData = JSON.parse(indexDataStr);
-          for (const key of Object.keys(indexData)) {
-            doc.import(key, indexData[key]);
-          }
-          indexLoaded = true;
-        } catch (err) {
-          console.error("Failed to load FlexSearch index:", err);
-        }
-      }
-      
-      if (!indexLoaded) {
-        try {
-          const allVideos = JSON.parse(storedVideosStr);
-          for (const video of allVideos) {
-            doc.add(video);
-          }
-        } catch (err) {
-          console.error("Failed to build fallback index:", err);
-        }
-      }
-      setSearchIndex(doc);
-    }
-  }, []);
-
-  const handleSearch = (searchQuery: string) => {
-    if (!searchIndex || !searchQuery.trim()) {
+  const handleSearch = async (searchQuery: string) => {
+    if (!searchQuery.trim()) {
       setResults([]);
       return;
     }
 
-    const searchResults = searchIndex.search(searchQuery, { enrich: true });
-    
-    const uniqueVideos = new Map<string, SyncedVideo>();
-    for (const fieldResult of searchResults) {
-      for (const item of fieldResult.result) {
-        if (item.doc && !uniqueVideos.has(item.id)) {
-          uniqueVideos.set(item.id as string, item.doc as SyncedVideo);
-        }
-      }
+    const queryWords = searchQuery.toLowerCase().split(/\W+/).filter(Boolean);
+    if (!queryWords.length) {
+      setResults([]);
+      return;
     }
 
-    const filteredVideos = Array.from(uniqueVideos.values());
+    try {
+      // Firestore array-contains-any allows up to 10 elements
+      const searchTerms = queryWords.slice(0, 10);
+      const q = query(
+        collection(db, firestoreConfig.collectionName),
+        where('searchWords', 'array-contains-any', searchTerms)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const videos: SyncedVideo[] = [];
+      querySnapshot.forEach((docSnap) => {
+        videos.push(docSnap.data() as SyncedVideo);
+      });
 
-    const groupedMap: Record<string, SyncedVideo[]> = {};
-    filteredVideos.forEach(video => {
-      if (!groupedMap[video.channelName]) {
-        groupedMap[video.channelName] = [];
-      }
-      groupedMap[video.channelName].push(video);
-    });
+      // Rank based on words (and secondary, on letters) that search terms matches
+      const rankedVideos = videos.map(video => {
+        const videoWords = video.searchWords || [];
+        let wordMatches = 0;
+        let letterMatches = 0;
 
-    const groupedResults: GroupedResults[] = Object.keys(groupedMap).map(channelName => ({
-      channelName,
-      items: groupedMap[channelName]
-    }));
+        queryWords.forEach(qw => {
+          if (videoWords.includes(qw)) {
+            wordMatches++;
+            letterMatches += qw.length;
+          } else {
+            const partialMatch = videoWords.find(vw => vw.includes(qw));
+            if (partialMatch) {
+              letterMatches += qw.length;
+            }
+          }
+        });
 
-    setResults(groupedResults);
+        return { video, wordMatches, letterMatches };
+      });
+
+      rankedVideos.sort((a, b) => {
+        if (b.wordMatches !== a.wordMatches) {
+          return b.wordMatches - a.wordMatches; // primary: word matches
+        }
+        return b.letterMatches - a.letterMatches; // secondary: letter matches
+      });
+
+      const sortedVideos = rankedVideos.map(r => r.video);
+
+      const groupedMap: Record<string, SyncedVideo[]> = {};
+      sortedVideos.forEach(video => {
+        if (!groupedMap[video.channelName]) {
+          groupedMap[video.channelName] = [];
+        }
+        groupedMap[video.channelName].push(video);
+      });
+
+      const groupedResults: GroupedResults[] = Object.keys(groupedMap).map(channelName => ({
+        channelName,
+        items: groupedMap[channelName]
+      }));
+
+      setResults(groupedResults);
+    } catch (err) {
+      console.error("Failed to search videos from Firestore:", err);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    handleSearch(query);
+    handleSearch(queryText);
   };
 
   useEffect(() => {
@@ -198,8 +202,8 @@ export default function Search() {
               inputRef={searchInputRef}
               variant="outlined"
               placeholder="Search offline videos..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={queryText}
+              onChange={(e) => setQueryText(e.target.value)}
               required
               size="small"
               sx={{ width: { xs: '100%', sm: 400 } }}
@@ -213,7 +217,7 @@ export default function Search() {
           </Box>
         </Box>
 
-        {results.length === 0 && query && (
+        {results.length === 0 && queryText && (
           <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 2 }}>
             <Typography variant="h6" gutterBottom>No matches found</Typography>
             <Typography variant="body1" color="text.secondary">
@@ -222,7 +226,7 @@ export default function Search() {
           </Paper>
         )}
 
-        {results.length === 0 && !query && (
+        {results.length === 0 && !queryText && (
           <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 2 }}>
             <Typography variant="h6" gutterBottom>Ready to search</Typography>
             <Typography variant="body1" color="text.secondary">

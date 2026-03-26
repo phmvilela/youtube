@@ -103,13 +103,19 @@ export default function Admin() {
           if (!playlistData.items || playlistData.items.length === 0) break;
           
           for (const item of playlistData.items) {
+            const title = item.snippet.title || '';
+            const channelName = item.snippet.channelTitle || '';
+            const rawWords = `${title} ${channelName}`.toLowerCase().split(/\W+/).filter(Boolean);
+            const searchWords = Array.from(new Set(rawWords));
+
             allVideos.push({
               videoId: item.snippet.resourceId.videoId,
-              title: item.snippet.title,
-              channelName: item.snippet.channelTitle,
+              title,
+              channelName,
               channelId: item.snippet.channelId,
               publishedAt: item.snippet.publishedAt,
               thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
+              searchWords,
             });
           }
           
