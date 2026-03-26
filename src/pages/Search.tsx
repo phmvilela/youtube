@@ -135,7 +135,8 @@ export default function Search() {
       const current = document.activeElement;
       const index = videoRefs.current.indexOf(current as HTMLElement);
 
-      if (event.key === '0' || event.keyCode === 48 || event.keyCode === 10009) {
+      if (event.key === '0' || event.keyCode === 48 || event.keyCode === 10009 || (event.key.toLowerCase() === 's' && event.shiftKey)) {
+        event.preventDefault();
         searchInputRef.current?.focus();
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
@@ -265,7 +266,7 @@ export default function Search() {
       <Container maxWidth={false}>
         <Box sx={{ mb: 4, mt: 2, textAlign: 'center' }}>
           <Typography variant="body2" color="text.secondary" gutterBottom>
-            Press <strong>0</strong> on your remote to focus the search box. Searching local copy.
+            Press <strong>Shift+S</strong> on your remote to focus the search box.
           </Typography>
 
           <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2 }}>

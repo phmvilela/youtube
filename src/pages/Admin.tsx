@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useApiKey } from '../hooks/useApiKey';
 import FlexSearch from 'flexsearch';
 import { collection, writeBatch, doc } from "firebase/firestore";
 import { useFirestoreConfig } from '../hooks/useFirestoreConfig';
 import FirestoreConfigModal from '../components/FirestoreConfigModal';
 import ApiKeyModal from '../components/ApiKeyModal';
-import { Box, Typography, List, ListItem, ListItemAvatar, Avatar, ListItemText, IconButton, Paper } from '@mui/material';
+import { Box, Typography, List, ListItem, ListItemAvatar, Avatar, ListItemText, IconButton, Paper, AppBar, Toolbar, Container } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 const ALLOWED_CHANNELS_STORAGE_KEY = 'allowed-channels';
 const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
@@ -30,6 +32,18 @@ export default function Admin() {
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowLeft' && event.shiftKey) {
+        event.preventDefault();
+        navigate('/');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigate]);
 
   // Load from local storage once
   useEffect(() => {
@@ -38,7 +52,7 @@ export default function Admin() {
       try {
         const parsedChannels = JSON.parse(storedChannels);
         if (Array.isArray(parsedChannels) && parsedChannels.length > 0) {
-          const normalized = parsedChannels.map(c => {
+          const normalized = parsedChannels.map((c: any) => {
             if (typeof c === 'string') return { id: c, name: c };
             return c;
           });
@@ -299,8 +313,20 @@ export default function Admin() {
   }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-      <h1>Admin - Allowed Channels</h1>
+    <Box sx={{ pb: 8 }}>
+      <AppBar position="static" color="transparent" elevation={0}>
+        <Toolbar>
+          <IconButton edge="start" component={RouterLink} to="/" color="inherit" aria-label="back to search" sx={{ mr: 2 }}>
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography variant="h5" component="h1" fontWeight="bold">
+            YouTube Offline
+          </Typography>
+        </Toolbar>
+      </AppBar>
+
+      <Container maxWidth="md" sx={{ mt: 4 }}>
+        <Typography variant="h4" component="h2" gutterBottom>Admin - Allowed Channels</Typography>
       
       <div style={{ position: 'relative', marginBottom: '30px' }} ref={dropdownRef}>
         <input
@@ -442,6 +468,8 @@ export default function Admin() {
           color: '#0056b3'
         }}>{syncStatus}</div>}
       </div>
-    </div>
+      </Container>
+    </Box>
   );
 }
+
