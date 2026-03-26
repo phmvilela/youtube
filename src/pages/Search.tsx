@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useApiKey } from '../hooks/useApiKey';
 import ApiKeyModal from '../components/ApiKeyModal';
@@ -174,6 +174,75 @@ export default function Search() {
     }
   }, [results]);
 
+  const renderedResults = useMemo(() => {
+    return results.map((res, channelIdx) => (
+      <Box key={res.channelName} sx={{ mb: 6 }}>
+        <Typography variant="h6" component="h2" sx={{ mb: 2, fontWeight: 'bold' }}>
+          {res.channelName}
+        </Typography>
+        <Box sx={{ 
+          display: 'grid', 
+          gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`, 
+          gap: 2 
+        }}>
+          {res.items.map((item, videoIdx) => {
+            const globalIdx = results.slice(0, channelIdx).reduce((acc, curr) => acc + curr.items.length, 0) + videoIdx;
+            return (
+              <Card 
+                key={item.videoId} 
+                sx={{ 
+                  height: '100%', 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  '&:focus-within': {
+                    outline: '4px solid #3ea6ff',
+                  }
+                }}
+              >
+                <CardActionArea 
+                  component="a"
+                  href={`/watch/${item.videoId}`}
+                  onClick={(e: React.MouseEvent) => {
+                    e.preventDefault();
+                    navigate(`/watch/${item.videoId}`);
+                  }}
+                  ref={(el: any) => (videoRefs.current[globalIdx] = el)}
+                  sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'flex-start' }}
+                >
+                  {item.thumbnail ? (
+                    <CardMedia
+                      component="img"
+                      image={item.thumbnail}
+                      alt={item.title}
+                      sx={{ aspectRatio: '16/9', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <Box sx={{ width: '100%', aspectRatio: '16/9', bgcolor: 'grey.800', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">No Thumbnail</Typography>
+                    </Box>
+                  )}
+                  <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                    <Typography variant="body2" component="div" sx={{ 
+                      display: '-webkit-box', 
+                      WebkitLineClamp: 2, 
+                      WebkitBoxOrient: 'vertical', 
+                      overflow: 'hidden',
+                      fontWeight: 500,
+                      lineHeight: 1.2,
+                      fontSize: '0.85rem'
+                    }}>
+                      {item.title}
+                    </Typography>
+                  </CardContent>
+                </CardActionArea>
+              </Card>
+            );
+          })}
+        </Box>
+      </Box>
+    ));
+  }, [results, navigate]);
+
   if (!apiKey) {
     return <ApiKeyModal onSave={saveApiKey} />;
   }
@@ -236,72 +305,7 @@ export default function Search() {
         )}
 
         <Box id="results-container">
-          {results.map((res, channelIdx) => (
-            <Box key={res.channelName} sx={{ mb: 6 }}>
-              <Typography variant="h6" component="h2" sx={{ mb: 2, fontWeight: 'bold' }}>
-                {res.channelName}
-              </Typography>
-              <Box sx={{ 
-                display: 'grid', 
-                gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`, 
-                gap: 2 
-              }}>
-                {res.items.map((item, videoIdx) => {
-                  const globalIdx = results.slice(0, channelIdx).reduce((acc, curr) => acc + curr.items.length, 0) + videoIdx;
-                  return (
-                    <Card 
-                      key={item.videoId} 
-                      sx={{ 
-                        height: '100%', 
-                        display: 'flex', 
-                        flexDirection: 'column',
-                        '&:focus-within': {
-                          outline: '4px solid #3ea6ff',
-                        }
-                      }}
-                    >
-                      <CardActionArea 
-                        component="a"
-                        href={`/watch/${item.videoId}`}
-                        onClick={(e: React.MouseEvent) => {
-                          e.preventDefault();
-                          navigate(`/watch/${item.videoId}`);
-                        }}
-                        ref={(el: any) => (videoRefs.current[globalIdx] = el)}
-                        sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'flex-start' }}
-                      >
-                        {item.thumbnail ? (
-                          <CardMedia
-                            component="img"
-                            image={item.thumbnail}
-                            alt={item.title}
-                            sx={{ aspectRatio: '16/9', objectFit: 'cover' }}
-                          />
-                        ) : (
-                          <Box sx={{ width: '100%', aspectRatio: '16/9', bgcolor: 'grey.800', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Typography variant="caption" color="text.secondary">No Thumbnail</Typography>
-                          </Box>
-                        )}
-                        <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                          <Typography variant="body2" component="div" sx={{ 
-                            display: '-webkit-box', 
-                            WebkitLineClamp: 2, 
-                            WebkitBoxOrient: 'vertical', 
-                            overflow: 'hidden',
-                            fontWeight: 500,
-                            lineHeight: 1.2,
-                            fontSize: '0.85rem'
-                          }}>
-                            {item.title}
-                          </Typography>
-                        </CardContent>
-                      </CardActionArea>
-                    </Card>
-                  );
-                })}
-              </Box>
-            </Box>
-          ))}
+          {renderedResults}
         </Box>
       </Container>
     </Box>
