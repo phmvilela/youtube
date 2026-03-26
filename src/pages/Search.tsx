@@ -2,9 +2,9 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useApiKey } from '../hooks/useApiKey';
 import ApiKeyModal from '../components/ApiKeyModal';
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, getDocs, query, where } from "firebase/firestore";
-import { firestoreConfig } from '../firestore.config';
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { useFirestoreConfig } from '../hooks/useFirestoreConfig';
+import FirestoreConfigModal from '../components/FirestoreConfigModal';
 import {
   Container,
   Typography,
@@ -22,9 +22,6 @@ import {
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import SettingsIcon from '@mui/icons-material/Settings';
-
-const firebaseApp = initializeApp(firestoreConfig);
-const db = getFirestore(firebaseApp, firestoreConfig.databaseId);
 
 const COLUMNS = 8;
 
@@ -51,6 +48,7 @@ export default function Search() {
   const videoRefs = useRef<(HTMLElement | null)[]>([]);
 
   const { apiKey, saveApiKey } = useApiKey();
+  const { config, saveConfig, db } = useFirestoreConfig();
 
   const handleSearch = async (searchQuery: string) => {
     if (!searchQuery.trim()) {
@@ -68,7 +66,7 @@ export default function Search() {
       // Firestore array-contains-any allows up to 10 elements
       const searchTerms = queryWords.slice(0, 10);
       const q = query(
-        collection(db, firestoreConfig.collectionName),
+        collection(db!, config!.collectionName),
         where('searchWords', 'array-contains-any', searchTerms)
       );
       
@@ -245,6 +243,10 @@ export default function Search() {
 
   if (!apiKey) {
     return <ApiKeyModal onSave={saveApiKey} />;
+  }
+
+  if (!config || !db) {
+    return <FirestoreConfigModal onSave={saveConfig} />;
   }
 
   return (

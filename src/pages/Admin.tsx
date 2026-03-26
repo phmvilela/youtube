@@ -1,20 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useApiKey } from '../hooks/useApiKey';
 import FlexSearch from 'flexsearch';
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, writeBatch, doc } from "firebase/firestore";
-import { firestoreConfig } from '../firestore.config';
+import { collection, writeBatch, doc } from "firebase/firestore";
+import { useFirestoreConfig } from '../hooks/useFirestoreConfig';
+import FirestoreConfigModal from '../components/FirestoreConfigModal';
+import ApiKeyModal from '../components/ApiKeyModal';
 
 const ALLOWED_CHANNELS_STORAGE_KEY = 'allowed-channels';
 const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
 
-// Initialize Firebase
-const firebaseApp = initializeApp(firestoreConfig);
-const db = getFirestore(firebaseApp, firestoreConfig.databaseId);
-
 export default function Admin() {
   const [channels, setChannels] = useState<string[]>(['']);
-  const { apiKey } = useApiKey();
+  const { apiKey, saveApiKey } = useApiKey();
+  const { config, saveConfig, db } = useFirestoreConfig();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
 
@@ -159,7 +157,8 @@ export default function Admin() {
 
     setSyncStatus(`Syncing ${allVideos.length} videos to Firestore...`);
     try {
-        const videosCollection = collection(db, firestoreConfig.collectionName);
+        if (!db || !config) throw new Error("Database not initialized");
+        const videosCollection = collection(db, config.collectionName);
         const chunkSize = 500;
         for (let i = 0; i < allVideos.length; i += chunkSize) {
             const chunk = allVideos.slice(i, i + chunkSize);
@@ -179,6 +178,14 @@ export default function Admin() {
 
     setIsSyncing(false);
   };
+
+  if (!apiKey) {
+    return <ApiKeyModal onSave={saveApiKey} />;
+  }
+
+  if (!config || !db) {
+    return <FirestoreConfigModal onSave={saveConfig} />;
+  }
 
   return (
     <div style={{ padding: '20px' }}>
