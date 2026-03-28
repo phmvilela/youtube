@@ -33,5 +33,7 @@
     // Inject your API Key from your Windows/WSL environment
     "remoteEnv": {
         "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}"
-    }
+    },
+    "remoteUser": "vscode",
+    "containerUser": "vscode"
 }

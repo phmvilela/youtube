@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useApiKey } from '../hooks/useApiKey';
 import FlexSearch from 'flexsearch';
-import { collection, writeBatch, doc } from "firebase/firestore";
+import { collection, writeBatch, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { useFirestoreConfig } from '../hooks/useFirestoreConfig';
 import FirestoreConfigModal from '../components/FirestoreConfigModal';
 import ApiKeyModal from '../components/ApiKeyModal';
@@ -87,8 +87,9 @@ export default function Admin() {
             });
           });
           
+          let updated: Channel[] = [];
           setChannels(prevChannels => {
-            const updated = prevChannels.map(c => {
+            updated = prevChannels.map(c => {
               if (channelsToFetch.some(fetchC => fetchC.id === c.id)) {
                  if (fetchedMap.has(c.id)) {
                    return fetchedMap.get(c.id);
@@ -101,6 +102,16 @@ export default function Admin() {
             localStorage.setItem(ALLOWED_CHANNELS_STORAGE_KEY, JSON.stringify(updated));
             return updated;
           });
+
+          if (db && updated.length > 0) {
+            const batch = writeBatch(db);
+            updated.forEach(c => {
+              if (channelsToFetch.some(fetchC => fetchC.id === c.id)) {
+                batch.set(doc(db, 'allowed_channels', c.id), c);
+              }
+            });
+            await batch.commit();
+          }
         }
       } catch (err) {
         console.error("Failed to fetch missing channel details", err);
@@ -153,20 +164,35 @@ export default function Admin() {
     return () => clearTimeout(timer);
   }, [searchQuery, apiKey]);
 
-  const handleSelectChannel = (channel: Channel) => {
+  const handleSelectChannel = async (channel: Channel) => {
     if (!channels.some(c => c.id === channel.id)) {
       const newChannels = [...channels, channel];
       setChannels(newChannels);
       localStorage.setItem(ALLOWED_CHANNELS_STORAGE_KEY, JSON.stringify(newChannels));
+      if (db) {
+        try {
+          await setDoc(doc(db, 'allowed_channels', channel.id), channel);
+        } catch (e) {
+          console.error("Failed to sync new channel to Firestore", e);
+        }
+      }
     }
     setSearchQuery('');
     setShowDropdown(false);
   };
 
-  const handleRemoveChannel = (index: number) => {
+  const handleRemoveChannel = async (index: number) => {
+    const channelToRemove = channels[index];
     const newChannels = channels.filter((_, i) => i !== index);
     setChannels(newChannels);
     localStorage.setItem(ALLOWED_CHANNELS_STORAGE_KEY, JSON.stringify(newChannels));
+    if (db && channelToRemove) {
+      try {
+        await deleteDoc(doc(db, 'allowed_channels', channelToRemove.id));
+      } catch (e) {
+        console.error("Failed to remove channel from Firestore", e);
+      }
+    }
   };
 
   const handleSyncVideos = async () => {
