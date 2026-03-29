@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useApiKey } from '../hooks/useApiKey';
 import FlexSearch from 'flexsearch';
-import { collection, writeBatch, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, writeBatch, doc, setDoc, deleteDoc, getDocs } from "firebase/firestore";
 import { useFirestoreConfig } from '../hooks/useFirestoreConfig';
 import FirestoreConfigModal from '../components/FirestoreConfigModal';
 import ApiKeyModal from '../components/ApiKeyModal';
@@ -12,6 +12,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 const ALLOWED_CHANNELS_STORAGE_KEY = 'allowed-channels';
 const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
+const DEFAULT_GAS_SYNC_URL = 'https://script.google.com/macros/s/AKfycby_L7FzgKimnYJKK-f2_5DvdJLQrUyK2bB_HXl6ncBlQ3EmLI9Oaz3kB9sY_a8yhhap/exec';
 
 interface Channel {
   id: string;
@@ -195,6 +196,73 @@ export default function Admin() {
     }
   };
 
+  const rebuildLocalIndex = async (allVideos: any[]) => {
+    setSyncStatus('Building local search index...');
+    try {
+      const doc = new FlexSearch.Document({
+        document: {
+          id: "videoId",
+          index: ["title", "channelName"],
+          store: true
+        }
+      });
+
+      for (const video of allVideos) {
+        doc.add(video);
+      }
+
+      const indexData: Record<string, any> = {};
+      await doc.export((key, data) => {
+        if (data) {
+          indexData[key.toString()] = data;
+        }
+      });
+      localStorage.setItem('flexsearch-index', JSON.stringify(indexData));
+      localStorage.setItem(SYNCED_VIDEOS_STORAGE_KEY, JSON.stringify(allVideos));
+    } catch (err) {
+      console.error('Error building search index:', err);
+    }
+  };
+
+  const handleServerSync = async () => {
+    const syncUrl = config?.gasSyncUrl || DEFAULT_GAS_SYNC_URL;
+
+    setIsSyncing(true);
+    setSyncStatus('Triggering server-side sync...');
+
+    try {
+      await fetch(syncUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({ 
+          collectionName: config?.collectionName || 'videos',
+          databaseId: config?.databaseId || '(default)'
+        })
+      });
+      
+      setSyncStatus('Server sync triggered. Waiting a few seconds before fetching updates...');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      setSyncStatus('Fetching updated videos from Firestore...');
+      if (!db || !config) throw new Error("Database not initialized");
+      
+      const videosCollection = collection(db, config.collectionName);
+      const querySnapshot = await getDocs(videosCollection);
+      const allVideos: any[] = [];
+      querySnapshot.forEach((doc) => {
+        allVideos.push(doc.data());
+      });
+
+      await rebuildLocalIndex(allVideos);
+      setSyncStatus(`Sync complete! Fetched ${allVideos.length} videos from Firestore.`);
+    } catch (error) {
+      console.error("Error during server sync:", error);
+      setSyncStatus("An error occurred during server-side sync.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleSyncVideos = async () => {
     if (!apiKey) {
       alert('API Key is missing. Please set it first.');
@@ -216,7 +284,7 @@ export default function Admin() {
     storedChannels = storedChannels.map((c: any) => typeof c === 'string' ? { id: c, name: c } : c);
     
     setIsSyncing(true);
-    setSyncStatus('Starting sync...');
+    setSyncStatus('Starting local sync...');
     
     const allVideos = [];
     
@@ -278,33 +346,8 @@ export default function Admin() {
       }
     }
     
-    setSyncStatus('Building local search index...');
-    try {
-      const doc = new FlexSearch.Document({
-        document: {
-          id: "videoId",
-          index: ["title", "channelName"],
-          store: true
-        }
-      });
-
-      for (const video of allVideos) {
-        doc.add(video);
-      }
-
-      const indexData: Record<string, any> = {};
-      await doc.export((key, data) => {
-        if (data) {
-          indexData[key.toString()] = data;
-        }
-      });
-      localStorage.setItem('flexsearch-index', JSON.stringify(indexData));
-    } catch (err) {
-      console.error('Error building search index:', err);
-    }
-    
-    localStorage.setItem(SYNCED_VIDEOS_STORAGE_KEY, JSON.stringify(allVideos));
-    setSyncStatus(`Sync complete! Saved metadata for ${allVideos.length} videos locally.`);
+    await rebuildLocalIndex(allVideos);
+    setSyncStatus(`Local sync complete! Saved ${allVideos.length} videos locally.`);
 
     setSyncStatus(`Syncing ${allVideos.length} videos to Firestore...`);
     try {
@@ -469,23 +512,44 @@ export default function Admin() {
 
       <div style={{ marginTop: '30px', borderTop: '1px solid #ccc', paddingTop: '20px' }}>
         <h2>Sync Channel Content</h2>
-        <p>Downloads metadata of recent uploads from configured channels for offline search and syncs to Firestore.</p>
-        <button 
-          onClick={handleSyncVideos} 
-          disabled={isSyncing}
-          style={{ 
-            padding: '10px 16px', 
-            fontSize: '16px', 
-            background: isSyncing ? '#aaa' : '#007bff', 
-            color: 'white', 
-            border: 'none', 
-            cursor: isSyncing ? 'not-allowed' : 'pointer',
-            borderRadius: '4px',
-            fontWeight: 'bold'
-          }}
-        >
-          {isSyncing ? 'Syncing...' : 'Sync Videos to Local and Firestore'}
-        </button>
+        <p>Downloads metadata of recent uploads from configured channels for offline search.</p>
+        
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <button 
+            onClick={handleSyncVideos} 
+            disabled={isSyncing}
+            style={{ 
+              padding: '10px 16px', 
+              fontSize: '16px', 
+              background: isSyncing ? '#aaa' : '#007bff', 
+              color: 'white', 
+              border: 'none', 
+              cursor: isSyncing ? 'not-allowed' : 'pointer',
+              borderRadius: '4px',
+              fontWeight: 'bold'
+            }}
+          >
+            {isSyncing ? 'Syncing...' : 'Sync Locally (to Firestore)'}
+          </button>
+
+          <button 
+            onClick={handleServerSync} 
+            disabled={isSyncing}
+            style={{ 
+              padding: '10px 16px', 
+              fontSize: '16px', 
+              background: isSyncing ? '#aaa' : '#28a745', 
+              color: 'white', 
+              border: 'none', 
+              cursor: isSyncing ? 'not-allowed' : 'pointer',
+              borderRadius: '4px',
+              fontWeight: 'bold'
+            }}
+          >
+            {isSyncing ? 'Syncing...' : 'Sync Server Side (GAS)'}
+          </button>
+        </Box>
+
         {syncStatus && <div style={{ 
           marginTop: '15px', 
           padding: '10px', 

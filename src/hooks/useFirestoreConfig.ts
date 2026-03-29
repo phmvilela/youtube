@@ -14,6 +14,7 @@ export interface FirestoreConfig {
   measurementId?: string;
   collectionName: string;
   databaseId: string;
+  gasSyncUrl?: string;
 }
 
 export function useFirestoreConfig() {
