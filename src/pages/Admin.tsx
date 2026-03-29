@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useApiKey } from '../hooks/useApiKey';
 import FlexSearch from 'flexsearch';
-import { collection, writeBatch, doc, setDoc, deleteDoc, getDocs } from "firebase/firestore";
+import { collection, writeBatch, doc, setDoc, deleteDoc, getDocs, onSnapshot, query } from "firebase/firestore";
 import { useFirestoreConfig } from '../hooks/useFirestoreConfig';
 import FirestoreConfigModal from '../components/FirestoreConfigModal';
 import ApiKeyModal from '../components/ApiKeyModal';
@@ -10,7 +10,6 @@ import { Box, Typography, List, ListItem, ListItemAvatar, Avatar, ListItemText, 
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
-const ALLOWED_CHANNELS_STORAGE_KEY = 'allowed-channels';
 const SYNCED_VIDEOS_STORAGE_KEY = 'synced-videos';
 const DEFAULT_GAS_SYNC_URL = 'https://script.google.com/macros/s/AKfycby_L7FzgKimnYJKK-f2_5DvdJLQrUyK2bB_HXl6ncBlQ3EmLI9Oaz3kB9sY_a8yhhap/exec';
 
@@ -46,30 +45,29 @@ export default function Admin() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigate]);
 
-  // Load from local storage once
+  // Load from Firestore
   useEffect(() => {
-    const storedChannels = localStorage.getItem(ALLOWED_CHANNELS_STORAGE_KEY);
-    if (storedChannels) {
-      try {
-        const parsedChannels = JSON.parse(storedChannels);
-        if (Array.isArray(parsedChannels) && parsedChannels.length > 0) {
-          const normalized = parsedChannels.map((c: any) => {
-            if (typeof c === 'string') return { id: c, name: c };
-            return c;
-          });
-          setChannels(normalized);
-        }
-      } catch (e) {
-        console.error("Failed to parse channels", e);
-      }
-    }
-  }, []);
+    if (!db) return;
+    
+    const q = query(collection(db, 'allowed_channels'));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const fetchedChannels: Channel[] = [];
+      querySnapshot.forEach((doc) => {
+        fetchedChannels.push(doc.data() as Channel);
+      });
+      setChannels(fetchedChannels);
+    }, (error) => {
+      console.error("Error listening to allowed_channels:", error);
+    });
+
+    return () => unsubscribe();
+  }, [db]);
 
   // Fetch missing channel details if needed
   useEffect(() => {
-    if (!apiKey || channels.length === 0) return;
+    if (!apiKey || channels.length === 0 || !db) return;
     
-    // Channels that only have ID and no name yet (meaning they just got parsed from old format)
+    // Channels that only have ID and no name yet (meaning they just got parsed from old format or added via ID)
     const channelsToFetch = channels.filter(c => c.name === c.id);
     if (channelsToFetch.length === 0) return;
 
@@ -88,29 +86,20 @@ export default function Admin() {
             });
           });
           
-          let updated: Channel[] = [];
-          setChannels(prevChannels => {
-            updated = prevChannels.map(c => {
-              if (channelsToFetch.some(fetchC => fetchC.id === c.id)) {
-                 if (fetchedMap.has(c.id)) {
-                   return fetchedMap.get(c.id);
-                 } else {
-                   return { ...c, name: c.id + ' (Unknown)' };
-                 }
-              }
-              return c;
-            });
-            localStorage.setItem(ALLOWED_CHANNELS_STORAGE_KEY, JSON.stringify(updated));
-            return updated;
+          const batch = writeBatch(db);
+          let updatedCount = 0;
+
+          channelsToFetch.forEach(c => {
+            if (fetchedMap.has(c.id)) {
+              batch.set(doc(db, 'allowed_channels', c.id), fetchedMap.get(c.id));
+              updatedCount++;
+            } else {
+              batch.set(doc(db, 'allowed_channels', c.id), { ...c, name: c.id + ' (Unknown)' });
+              updatedCount++;
+            }
           });
 
-          if (db && updated.length > 0) {
-            const batch = writeBatch(db);
-            updated.forEach(c => {
-              if (channelsToFetch.some(fetchC => fetchC.id === c.id)) {
-                batch.set(doc(db, 'allowed_channels', c.id), c);
-              }
-            });
+          if (updatedCount > 0) {
             await batch.commit();
           }
         }
@@ -120,7 +109,7 @@ export default function Admin() {
     };
     
     fetchMissingDetails();
-  }, [channels, apiKey]);
+  }, [channels, apiKey, db]);
 
   // Handle outside click for dropdown
   useEffect(() => {
@@ -167,14 +156,11 @@ export default function Admin() {
 
   const handleSelectChannel = async (channel: Channel) => {
     if (!channels.some(c => c.id === channel.id)) {
-      const newChannels = [...channels, channel];
-      setChannels(newChannels);
-      localStorage.setItem(ALLOWED_CHANNELS_STORAGE_KEY, JSON.stringify(newChannels));
       if (db) {
         try {
           await setDoc(doc(db, 'allowed_channels', channel.id), channel);
         } catch (e) {
-          console.error("Failed to sync new channel to Firestore", e);
+          console.error("Failed to add channel to Firestore", e);
         }
       }
     }
@@ -184,9 +170,6 @@ export default function Admin() {
 
   const handleRemoveChannel = async (index: number) => {
     const channelToRemove = channels[index];
-    const newChannels = channels.filter((_, i) => i !== index);
-    setChannels(newChannels);
-    localStorage.setItem(ALLOWED_CHANNELS_STORAGE_KEY, JSON.stringify(newChannels));
     if (db && channelToRemove) {
       try {
         await deleteDoc(doc(db, 'allowed_channels', channelToRemove.id));
@@ -261,116 +244,6 @@ export default function Admin() {
     } finally {
       setIsSyncing(false);
     }
-  };
-
-  const handleSyncVideos = async () => {
-    if (!apiKey) {
-      alert('API Key is missing. Please set it first.');
-      return;
-    }
-    
-    const storedChannelsStr = localStorage.getItem(ALLOWED_CHANNELS_STORAGE_KEY);
-    if (!storedChannelsStr) {
-      alert('No channels saved. Please save channels first.');
-      return;
-    }
-    
-    let storedChannels = JSON.parse(storedChannelsStr);
-    if (!Array.isArray(storedChannels) || storedChannels.length === 0) {
-      alert('No valid channels to sync.');
-      return;
-    }
-    
-    storedChannels = storedChannels.map((c: any) => typeof c === 'string' ? { id: c, name: c } : c);
-    
-    setIsSyncing(true);
-    setSyncStatus('Starting local sync...');
-    
-    const allVideos = [];
-    
-    for (const channel of storedChannels) {
-      const channelId = channel.id;
-      if (!channelId) continue;
-      try {
-        setSyncStatus(`Fetching uploads playlist for ${channel.name || channelId}...`);
-        
-        const channelRes = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${apiKey}`);
-        const channelData = await channelRes.json();
-        
-        if (channelData.error) {
-           console.error(`YouTube API Error for ${channelId}:`, channelData.error);
-           continue;
-        }
-
-        const uploadsPlaylistId = channelData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
-        if (!uploadsPlaylistId) {
-          console.warn(`No uploads playlist found for channel ${channelId}`);
-          continue;
-        }
-        
-        let pageToken = '';
-        let pagesFetched = 0;
-        
-        while (true) {
-          setSyncStatus(`Fetching videos for channel ${channel.name || channelId} (Page ${pagesFetched + 1})...`);
-          const pageTokenParam = pageToken ? `&pageToken=${pageToken}` : '';
-          const playlistRes = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50${pageTokenParam}&key=${apiKey}`);
-          const playlistData = await playlistRes.json();
-          
-          if (!playlistData.items || playlistData.items.length === 0) break;
-          
-          for (const item of playlistData.items) {
-            const title = item.snippet.title || '';
-            const channelName = item.snippet.channelTitle || '';
-            const rawWords = `${title} ${channelName}`.toLowerCase().split(/\W+/).filter(Boolean);
-            const searchWords = Array.from(new Set(rawWords));
-
-            allVideos.push({
-              videoId: item.snippet.resourceId.videoId,
-              title,
-              channelName,
-              channelId: item.snippet.channelId,
-              publishedAt: item.snippet.publishedAt,
-              thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
-              searchWords,
-            });
-          }
-          
-          pageToken = playlistData.nextPageToken;
-          pagesFetched++;
-          
-          if (!pageToken) break;
-        }
-      } catch (e) {
-        console.error(`Error syncing channel ${channelId}:`, e);
-      }
-    }
-    
-    await rebuildLocalIndex(allVideos);
-    setSyncStatus(`Local sync complete! Saved ${allVideos.length} videos locally.`);
-
-    setSyncStatus(`Syncing ${allVideos.length} videos to Firestore...`);
-    try {
-        if (!db || !config) throw new Error("Database not initialized");
-        const videosCollection = collection(db, config.collectionName);
-        const chunkSize = 500;
-        for (let i = 0; i < allVideos.length; i += chunkSize) {
-            const chunk = allVideos.slice(i, i + chunkSize);
-            const batch = writeBatch(db);
-            chunk.forEach((video) => {
-                const videoDocRef = doc(videosCollection, video.videoId);
-                batch.set(videoDocRef, video);
-            });
-            await batch.commit();
-            setSyncStatus(`Synced ${i + chunk.length} of ${allVideos.length} videos to Firestore...`);
-        }
-        setSyncStatus(`Successfully synced ${allVideos.length} videos to Firestore.`);
-    } catch (error) {
-        console.error("Error syncing to Firestore:", error);
-        setSyncStatus("An error occurred while syncing to Firestore.");
-    }
-
-    setIsSyncing(false);
   };
 
   if (!apiKey) {
@@ -516,23 +389,6 @@ export default function Admin() {
         
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
           <button 
-            onClick={handleSyncVideos} 
-            disabled={isSyncing}
-            style={{ 
-              padding: '10px 16px', 
-              fontSize: '16px', 
-              background: isSyncing ? '#aaa' : '#007bff', 
-              color: 'white', 
-              border: 'none', 
-              cursor: isSyncing ? 'not-allowed' : 'pointer',
-              borderRadius: '4px',
-              fontWeight: 'bold'
-            }}
-          >
-            {isSyncing ? 'Syncing...' : 'Sync Locally (to Firestore)'}
-          </button>
-
-          <button 
             onClick={handleServerSync} 
             disabled={isSyncing}
             style={{ 
@@ -562,4 +418,3 @@ export default function Admin() {
     </Box>
   );
 }
-
