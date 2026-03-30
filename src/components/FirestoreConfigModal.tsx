@@ -16,7 +16,8 @@ const FirestoreConfigModal: React.FC<FirestoreConfigModalProps> = ({ onSave }) =
     measurementId: '',
     collectionName: 'videos',
     databaseId: 'youtube-kids',
-    gasSyncUrl: ''
+    gasSyncUrl: '',
+    googleClientId: '944053436879-oqgtkeh77saqomocuc45rf68tv24i6qf.apps.googleusercontent.com'
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -32,7 +33,8 @@ const FirestoreConfigModal: React.FC<FirestoreConfigModalProps> = ({ onSave }) =
       config.messagingSenderId &&
       config.appId &&
       config.collectionName &&
-      config.databaseId
+      config.databaseId &&
+      config.googleClientId
     ) {
       onSave(config as FirestoreConfig);
     } else {
@@ -48,7 +50,7 @@ const FirestoreConfigModal: React.FC<FirestoreConfigModalProps> = ({ onSave }) =
           Please provide your Firebase configuration details.
         </p>
         <div className="space-y-3 mb-4 max-h-96 overflow-y-auto">
-          {['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId', 'measurementId', 'collectionName', 'databaseId', 'gasSyncUrl'].map((field) => (
+          {['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId', 'measurementId', 'collectionName', 'databaseId', 'gasSyncUrl', 'googleClientId'].map((field) => (
             <input
               key={field}
               type="text"

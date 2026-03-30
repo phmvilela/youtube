@@ -15,6 +15,7 @@ export interface FirestoreConfig {
   collectionName: string;
   databaseId: string;
   gasSyncUrl?: string;
+  googleClientId: string;
 }
 
 export function useFirestoreConfig() {
