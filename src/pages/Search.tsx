@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from '../config/firebase';
-import { appConfig } from '../config/firebase';
+import { db, appConfig } from '../config/firebase';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Container,
   Typography,
@@ -43,9 +43,10 @@ export default function Search() {
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const videoRefs = useRef<(HTMLElement | null)[]>([]);
+  const { user } = useAuth();
 
   const handleSearch = async (searchQuery: string) => {
-    if (!searchQuery.trim()) {
+    if (!searchQuery.trim() || !user) {
       setResults([]);
       return;
     }
@@ -60,7 +61,7 @@ export default function Search() {
       // Firestore array-contains-any allows up to 10 elements
       const searchTerms = queryWords.slice(0, 10);
       const q = query(
-        collection(db, appConfig.collectionName),
+        collection(db, 'users', user.uid, appConfig.collectionName),
         where('searchWords', 'array-contains-any', searchTerms)
       );
 

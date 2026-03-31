@@ -26,11 +26,13 @@ function doPost(e) {
       // Sync actions (Sync.gs)
       case 'sync':
       default:
+        var uid = verifyFirebaseIdToken(req.firebaseIdToken);
         var collectionName = req.collectionName || 'videos';
         var databaseId = 'youtube-kids';
         Logger.log('Target database: ' + databaseId);
         Logger.log('Target collection: ' + collectionName);
-        var syncedCount = performSync(collectionName, databaseId);
+        Logger.log('User UID: ' + uid);
+        var syncedCount = performSync(uid, collectionName, databaseId);
         result = { success: true, syncedCount: syncedCount };
         break;
     }

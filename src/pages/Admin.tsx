@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { collection, doc, deleteDoc, onSnapshot, query } from "firebase/firestore";
+import { getAuth } from 'firebase/auth';
 import { db, appConfig } from '../config/firebase';
+import { callGas } from '../lib/gasClient';
+import { useAuth } from '../contexts/AuthContext';
 import { Box, Typography, List, ListItem, ListItemAvatar, Avatar, ListItemText, IconButton, Paper, AppBar, Toolbar, Container } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -18,6 +21,7 @@ export default function Admin() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -30,9 +34,10 @@ export default function Admin() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigate]);
 
-  // Load from Firestore
+  // Load from Firestore (user-scoped)
   useEffect(() => {
-    const q = query(collection(db, 'allowed_channels'));
+    if (!user) return;
+    const q = query(collection(db, 'users', user.uid, 'allowed_channels'));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const fetchedChannels: Channel[] = [];
       querySnapshot.forEach((doc) => {
@@ -44,13 +49,13 @@ export default function Admin() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   const handleRemoveChannel = async (index: number) => {
     const channelToRemove = channels[index];
-    if (channelToRemove) {
+    if (channelToRemove && user) {
       try {
-        await deleteDoc(doc(db, 'allowed_channels', channelToRemove.id));
+        await deleteDoc(doc(db, 'users', user.uid, 'allowed_channels', channelToRemove.id));
       } catch (e) {
         console.error("Failed to remove channel from Firestore", e);
       }
@@ -58,20 +63,23 @@ export default function Admin() {
   };
 
   const handleServerSync = async () => {
+    if (!user) return;
     setIsSyncing(true);
     setSyncStatus('Triggering server-side sync...');
 
     try {
-      await fetch(appConfig.gasSyncUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        body: JSON.stringify({
-          collectionName: appConfig.collectionName,
-          databaseId: appConfig.databaseId,
-        })
+      const auth = getAuth();
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error('Not authenticated');
+
+      const result = await callGas<{ success: boolean; syncedCount?: number }>(appConfig.gasSyncUrl, {
+        action: 'sync',
+        firebaseIdToken: idToken,
+        collectionName: appConfig.collectionName,
+        databaseId: appConfig.databaseId,
       });
 
-      setSyncStatus('Server sync triggered successfully.');
+      setSyncStatus(`Server sync complete. ${result.syncedCount ?? 0} videos synced.`);
     } catch (error) {
       console.error("Error during server sync:", error);
       setSyncStatus("An error occurred during server-side sync.");
