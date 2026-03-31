@@ -30,4 +30,17 @@ else
     echo "⚠️ Warning: Mount point $MOUNT_POINT not found. Skipping copy."
 fi
 
+# Initialize Claude Code
+cat > ~/.claude.json << 'EOF'
+{
+  "hasCompletedOnboarding": true,
+  "lastOnboardingVersion": "2.1.29",
+  "oauthAccount": {
+    "accountUuid": "b556c7ba-a37b-4b10-bdd8-e97999271881",
+    "emailAddress": "pedromv@gmail.com",
+    "organizationUuid": "5c759cb8-08c3-4e01-8dee-d51527e00c78"
+  }
+}
+EOF
+
 echo "--- All systems go! ---"

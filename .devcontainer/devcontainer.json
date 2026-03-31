@@ -8,6 +8,7 @@
         "ghcr.io/devcontainers/features/node:1": {
             "version": "lts"
         },
+        "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
         "./goose-feature": {},
         "./gemini-feature": {}
     },
@@ -23,8 +24,9 @@
             "extensions": [
                 "ms-python.python",
                 "ms-python.vscode-pylance",
-                "google.gemini-cli-companion", // The bridge for Gemini CLI
-                "Google.geminicodeassist"
+                "google.gemini-cli-companion",
+                "Google.geminicodeassist",
+                "Anthropic.claude-code"
             ]
         }
     },
@@ -32,7 +34,8 @@
     "postCreateCommand": "bash .devcontainer/post-create.sh",
     // Inject your API Key from your Windows/WSL environment
     "remoteEnv": {
-        "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}"
+        "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
+        "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}"
     },
     "remoteUser": "vscode",
     "containerUser": "vscode"
