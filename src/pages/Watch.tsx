@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Button, Typography, AppBar, Toolbar } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import UserMenu from '../components/UserMenu';
 
 declare global {
   interface Window {
@@ -108,7 +109,7 @@ export default function Watch() {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: 'black', color: 'white' }}>
       <AppBar position="static" color="transparent" elevation={0} sx={{ zIndex: 2, bgcolor: 'background.paper' }}>
-        <Toolbar sx={{ justifyContent: 'center', gap: 2 }}>
+        <Toolbar sx={{ gap: 2 }}>
           <Button
             ref={playBtnRef}
             variant="contained"
@@ -126,6 +127,8 @@ export default function Watch() {
           >
             Return to Search
           </Button>
+          <Box sx={{ flexGrow: 1 }} />
+          <UserMenu />
         </Toolbar>
       </AppBar>
       

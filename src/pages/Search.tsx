@@ -16,10 +16,9 @@ import {
   AppBar,
   Toolbar,
   Paper,
-  IconButton
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
-import SettingsIcon from '@mui/icons-material/Settings';
+import UserMenu from '../components/UserMenu';
 
 const COLUMNS = 8;
 
@@ -244,9 +243,7 @@ export default function Search() {
           <Typography variant="h5" component="h1" fontWeight="bold">
             YouTube Offline
           </Typography>
-          <IconButton component={RouterLink} to="/admin" color="inherit" aria-label="admin">
-            <SettingsIcon />
-          </IconButton>
+          <UserMenu />
         </Toolbar>
       </AppBar>
 
@@ -280,7 +277,7 @@ export default function Search() {
           <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 2 }}>
             <Typography variant="h6" gutterBottom>No matches found</Typography>
             <Typography variant="body1" color="text.secondary">
-              Try a different search term or sync videos in the <RouterLink to="/admin" style={{ color: 'inherit' }}>Admin Page</RouterLink>.
+              Try a different search term or sync videos in the <RouterLink to="/admin" style={{ color: 'inherit' }}>Content Management</RouterLink>.
             </Typography>
           </Paper>
         )}
@@ -289,7 +286,7 @@ export default function Search() {
           <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 2 }}>
             <Typography variant="h6" gutterBottom>Ready to search</Typography>
             <Typography variant="body1" color="text.secondary">
-              Please enter a query above. Make sure you have synced videos in the <RouterLink to="/admin" style={{ color: 'inherit' }}>Admin Page</RouterLink>.
+              Please enter a query above. Make sure you have synced videos in the <RouterLink to="/admin" style={{ color: 'inherit' }}>Content Management</RouterLink>.
             </Typography>
           </Paper>
         )}

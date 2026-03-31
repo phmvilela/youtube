@@ -69,6 +69,8 @@ function exchangeAuthCode(req) {
   return {
     success: true,
     firebaseToken: firebaseToken,
+    displayName: userInfo.name || null,
+    photoURL: userInfo.picture || null,
     user: {
       uid: userInfo.sub,
       email: userInfo.email,

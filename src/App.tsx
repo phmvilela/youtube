@@ -7,6 +7,7 @@ import Search from './pages/Search';
 import Watch from './pages/Watch';
 import KeyDebug from './pages/KeyDebug';
 import Admin from './pages/Admin';
+import Preferences from './pages/Preferences';
 import Login from './pages/Login';
 import AuthCallback from './pages/AuthCallback';
 
@@ -69,6 +70,7 @@ function AppRoutes() {
         <Route path="/" element={<Search />} />
         <Route path="/watch/:id" element={<Watch />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/preferences" element={<Preferences />} />
       </Route>
     </Routes>
   );

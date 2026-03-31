@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
-import { getAuth, signInWithCustomToken, signOut, onAuthStateChanged, type User } from 'firebase/auth';
+import { getAuth, signInWithCustomToken, signOut, onAuthStateChanged, updateProfile, type User } from 'firebase/auth';
 import { getApps } from 'firebase/app';
 import { generateCodeVerifier, generateCodeChallenge } from '../lib/pkce';
 import { callGas } from '../lib/gasClient';
@@ -121,7 +121,7 @@ export async function handleAuthCallback(): Promise<User> {
 
   const redirectUri = `${window.location.origin}/auth/callback`;
 
-  const data = await callGas<{ firebaseToken: string }>(appConfig.gasSyncUrl, {
+  const data = await callGas<{ firebaseToken: string; displayName?: string; photoURL?: string }>(appConfig.gasSyncUrl, {
     action: 'exchangeCode',
     code,
     codeVerifier: verifier,
@@ -133,5 +133,15 @@ export async function handleAuthCallback(): Promise<User> {
 
   const auth = getAuth(app);
   const credential = await signInWithCustomToken(auth, data.firebaseToken);
+
+  // Custom token sign-in doesn't populate profile fields, so set them from
+  // the Google profile info returned by the backend.
+  if (data.displayName || data.photoURL) {
+    await updateProfile(credential.user, {
+      displayName: data.displayName ?? null,
+      photoURL: data.photoURL ?? null,
+    });
+  }
+
   return credential.user;
 }

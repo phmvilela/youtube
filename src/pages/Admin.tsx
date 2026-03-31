@@ -5,6 +5,7 @@ import { db, appConfig } from '../config/firebase';
 import { Box, Typography, List, ListItem, ListItemAvatar, Avatar, ListItemText, IconButton, Paper, AppBar, Toolbar, Container } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import UserMenu from '../components/UserMenu';
 
 interface Channel {
   id: string;
@@ -86,14 +87,15 @@ export default function Admin() {
           <IconButton edge="start" component={RouterLink} to="/" color="inherit" aria-label="back to search" sx={{ mr: 2 }}>
             <ArrowBackIcon />
           </IconButton>
-          <Typography variant="h5" component="h1" fontWeight="bold">
+          <Typography variant="h5" component="h1" fontWeight="bold" sx={{ flexGrow: 1 }}>
             YouTube Offline
           </Typography>
+          <UserMenu />
         </Toolbar>
       </AppBar>
 
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Typography variant="h4" component="h2" gutterBottom>Admin - Allowed Channels</Typography>
+        <Typography variant="h4" component="h2" gutterBottom>Content Management - Allowed Channels</Typography>
 
       <Box sx={{ mb: 4 }}>
         <Typography variant="h6" sx={{ mb: 2 }}>Saved Channels ({channels.length})</Typography>
