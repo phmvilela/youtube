@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { useApiKey } from '../hooks/useApiKey';
-import ApiKeyModal from '../components/ApiKeyModal';
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { useFirestoreConfig } from '../hooks/useFirestoreConfig';
-import FirestoreConfigModal from '../components/FirestoreConfigModal';
+import { db } from '../config/firebase';
+import { appConfig } from '../config/firebase';
 import {
   Container,
   Typography,
@@ -47,9 +45,6 @@ export default function Search() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const videoRefs = useRef<(HTMLElement | null)[]>([]);
 
-  const { apiKey, saveApiKey } = useApiKey();
-  const { config, saveConfig, db } = useFirestoreConfig();
-
   const handleSearch = async (searchQuery: string) => {
     if (!searchQuery.trim()) {
       setResults([]);
@@ -66,10 +61,10 @@ export default function Search() {
       // Firestore array-contains-any allows up to 10 elements
       const searchTerms = queryWords.slice(0, 10);
       const q = query(
-        collection(db!, config!.collectionName),
+        collection(db, appConfig.collectionName),
         where('searchWords', 'array-contains-any', searchTerms)
       );
-      
+
       const querySnapshot = await getDocs(q);
       const videos: SyncedVideo[] = [];
       querySnapshot.forEach((docSnap) => {
@@ -179,26 +174,26 @@ export default function Search() {
         <Typography variant="h6" component="h2" sx={{ mb: 2, fontWeight: 'bold' }}>
           {res.channelName}
         </Typography>
-        <Box sx={{ 
-          display: 'grid', 
-          gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`, 
-          gap: 2 
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`,
+          gap: 2
         }}>
           {res.items.map((item, videoIdx) => {
             const globalIdx = results.slice(0, channelIdx).reduce((acc, curr) => acc + curr.items.length, 0) + videoIdx;
             return (
-              <Card 
-                key={item.videoId} 
-                sx={{ 
-                  height: '100%', 
-                  display: 'flex', 
+              <Card
+                key={item.videoId}
+                sx={{
+                  height: '100%',
+                  display: 'flex',
                   flexDirection: 'column',
                   '&:focus-within': {
                     outline: '4px solid #3ea6ff',
                   }
                 }}
               >
-                <CardActionArea 
+                <CardActionArea
                   component="a"
                   href={`/watch/${item.videoId}`}
                   onClick={(e: React.MouseEvent) => {
@@ -221,10 +216,10 @@ export default function Search() {
                     </Box>
                   )}
                   <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                    <Typography variant="body2" component="div" sx={{ 
-                      display: '-webkit-box', 
-                      WebkitLineClamp: 2, 
-                      WebkitBoxOrient: 'vertical', 
+                    <Typography variant="body2" component="div" sx={{
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
                       overflow: 'hidden',
                       fontWeight: 500,
                       lineHeight: 1.2,
@@ -241,14 +236,6 @@ export default function Search() {
       </Box>
     ));
   }, [results, navigate]);
-
-  if (!apiKey) {
-    return <ApiKeyModal onSave={saveApiKey} />;
-  }
-
-  if (!config || !db) {
-    return <FirestoreConfigModal onSave={saveConfig} />;
-  }
 
   return (
     <Box sx={{ pb: 8 }}>

@@ -2,9 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { CircularProgress, Box } from '@mui/material';
-import { useFirestoreConfig } from './hooks/useFirestoreConfig';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import FirestoreConfigModal from './components/FirestoreConfigModal';
 import Search from './pages/Search';
 import Watch from './pages/Watch';
 import KeyDebug from './pages/KeyDebug';
@@ -77,23 +75,11 @@ function AppRoutes() {
 }
 
 function App() {
-  const { config, saveConfig } = useFirestoreConfig();
-
-  // Config must be provided before anything else works
-  if (!config) {
-    return (
-      <ThemeProvider theme={darkTheme}>
-        <CssBaseline />
-        <FirestoreConfigModal onSave={saveConfig} />
-      </ThemeProvider>
-    );
-  }
-
   return (
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
       <BrowserRouter>
-        <AuthProvider config={config}>
+        <AuthProvider>
           <AppRoutes />
         </AuthProvider>
       </BrowserRouter>

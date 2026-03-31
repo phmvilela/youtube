@@ -3,7 +3,7 @@ import { getAuth, signInWithCustomToken, signOut, onAuthStateChanged, type User 
 import { getApps } from 'firebase/app';
 import { generateCodeVerifier, generateCodeChallenge } from '../lib/pkce';
 import { callGas } from '../lib/gasClient';
-import { type FirestoreConfig } from '../hooks/useFirestoreConfig';
+import { appConfig } from '../config/firebase';
 
 const OAUTH_SCOPES = [
   'openid',
@@ -29,12 +29,7 @@ export function useAuth() {
   return ctx;
 }
 
-interface AuthProviderProps {
-  config: FirestoreConfig;
-  children: ReactNode;
-}
-
-export function AuthProvider({ config, children }: AuthProviderProps) {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -62,7 +57,7 @@ export function AuthProvider({ config, children }: AuthProviderProps) {
     const redirectUri = `${window.location.origin}/auth/callback`;
 
     const params = new URLSearchParams({
-      client_id: config.googleClientId,
+      client_id: appConfig.googleClientId,
       redirect_uri: redirectUri,
       response_type: 'code',
       scope: OAUTH_SCOPES,
@@ -73,7 +68,7 @@ export function AuthProvider({ config, children }: AuthProviderProps) {
     });
 
     window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-  }, [config.googleClientId]);
+  }, []);
 
   // Sign out of Firebase and revoke tokens on the server
   const logout = useCallback(async () => {
@@ -82,11 +77,11 @@ export function AuthProvider({ config, children }: AuthProviderProps) {
 
     const auth = getAuth(app);
 
-    // Revoke server-side tokens if we have a GAS URL
-    if (auth.currentUser && config.gasSyncUrl) {
+    // Revoke server-side tokens
+    if (auth.currentUser) {
       try {
         const idToken = await auth.currentUser.getIdToken();
-        await callGas(config.gasSyncUrl, {
+        await callGas(appConfig.gasSyncUrl, {
           action: 'revokeTokens',
           firebaseIdToken: idToken,
         });
@@ -96,7 +91,7 @@ export function AuthProvider({ config, children }: AuthProviderProps) {
     }
 
     await signOut(auth);
-  }, [config.gasSyncUrl]);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>
@@ -110,7 +105,7 @@ export function AuthProvider({ config, children }: AuthProviderProps) {
  * Exchanges the authorization code for a Firebase custom token via GAS,
  * then signs in to Firebase.
  */
-export async function handleAuthCallback(gasUrl: string): Promise<User> {
+export async function handleAuthCallback(): Promise<User> {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
   const error = params.get('error');
@@ -126,7 +121,7 @@ export async function handleAuthCallback(gasUrl: string): Promise<User> {
 
   const redirectUri = `${window.location.origin}/auth/callback`;
 
-  const data = await callGas<{ firebaseToken: string }>(gasUrl, {
+  const data = await callGas<{ firebaseToken: string }>(appConfig.gasSyncUrl, {
     action: 'exchangeCode',
     code,
     codeVerifier: verifier,
