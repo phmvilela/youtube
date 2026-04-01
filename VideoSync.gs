@@ -37,6 +37,32 @@ function testSync() {
  * @param {string} collectionName - Target sub-collection for videos (default 'videos')
  * @param {string} databaseId - Firestore database ID
  */
+/**
+ * Write or update the sync status document in Firestore so the frontend
+ * can display real-time progress via onSnapshot.
+ *
+ * @param {string} statusDocUrl - Full REST URL for the sync_status/current document
+ * @param {string} token - Firestore Bearer token
+ * @param {Object} fields - Key/value pairs to write (merged into Firestore fields)
+ */
+function writeSyncStatus(statusDocUrl, token, fields) {
+  var firestoreFields = {};
+  for (var k in fields) {
+    firestoreFields[k] = toFirestoreValue(fields[k]);
+  }
+
+  var updateMask = Object.keys(fields).map(function(k) { return 'updateMask.fieldPaths=' + k; }).join('&');
+  var url = statusDocUrl + '?' + updateMask;
+
+  UrlFetchApp.fetch(url, {
+    method: 'patch',
+    headers: { 'Authorization': 'Bearer ' + token },
+    contentType: 'application/json',
+    payload: JSON.stringify({ fields: firestoreFields }),
+    muteHttpExceptions: true
+  });
+}
+
 function performSync(uid, collectionName, databaseId) {
   if (!uid) throw new Error('uid is required for performSync');
 
@@ -52,6 +78,18 @@ function performSync(uid, collectionName, databaseId) {
   var token = getFirestoreToken();
   var baseUrl = 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/' + dbId + '/documents';
   var userBase = baseUrl + '/users/' + uid;
+
+  // Status document URL for progress tracking
+  var statusDocUrl = userBase + '/sync_status/current';
+
+  // Write initial status
+  writeSyncStatus(statusDocUrl, token, {
+    status: 'fetching_videos',
+    total: 0,
+    synced: 0,
+    message: 'Fetching channels...',
+    startedAt: new Date().toISOString()
+  });
 
   // Step A: Fetch allowed channels from Firestore (user-scoped)
   var channelsUrl = userBase + '/allowed_channels?pageSize=100';
@@ -74,8 +112,18 @@ function performSync(uid, collectionName, databaseId) {
 
   if (channels.length === 0) {
     Logger.log('No channels found.');
+    writeSyncStatus(statusDocUrl, token, {
+      status: 'complete',
+      total: 0,
+      synced: 0,
+      message: 'No channels found.'
+    });
     return 0;
   }
+
+  writeSyncStatus(statusDocUrl, token, {
+    message: 'Fetching videos from ' + channels.length + ' channel(s)...'
+  });
 
   var allVideos = [];
 
@@ -132,10 +180,19 @@ function performSync(uid, collectionName, databaseId) {
 
   Logger.log('Total videos to sync: ' + allVideos.length);
 
+  // Update status with total count after YouTube fetch
+  writeSyncStatus(statusDocUrl, token, {
+    status: 'writing',
+    total: allVideos.length,
+    synced: 0,
+    message: 'Writing ' + allVideos.length + ' videos to database...'
+  });
+
   // Step C: Batch write to Firestore
   if (allVideos.length > 0) {
     var commitUrl = baseUrl + ':commit';
     var chunkSize = 400;
+    var totalSynced = 0;
 
     for (var i = 0; i < allVideos.length; i += chunkSize) {
       var chunk = allVideos.slice(i, i + chunkSize);
@@ -158,9 +215,22 @@ function performSync(uid, collectionName, databaseId) {
 
       if (res.getResponseCode() !== 200) {
         Logger.log('  Batch write failed: ' + res.getContentText());
+      } else {
+        totalSynced += chunk.length;
+        writeSyncStatus(statusDocUrl, token, {
+          synced: totalSynced,
+          message: totalSynced + ' of ' + allVideos.length + ' videos synced'
+        });
       }
     }
   }
+
+  // Mark sync as complete
+  writeSyncStatus(statusDocUrl, token, {
+    status: 'complete',
+    synced: allVideos.length,
+    message: 'Sync complete. ' + allVideos.length + ' videos synced.'
+  });
 
   return allVideos.length;
 }

@@ -3,6 +3,7 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { CircularProgress, Box } from '@mui/material';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { SyncStatusProvider } from './contexts/SyncStatusContext';
 import Search from './pages/Search';
 import Watch from './pages/Watch';
 import KeyDebug from './pages/KeyDebug';
@@ -82,7 +83,9 @@ function App() {
       <CssBaseline />
       <BrowserRouter>
         <AuthProvider>
-          <AppRoutes />
+          <SyncStatusProvider>
+            <AppRoutes />
+          </SyncStatusProvider>
         </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>

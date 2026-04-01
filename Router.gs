@@ -23,6 +23,16 @@ function doPost(e) {
         result = revokeUserTokens(req);
         break;
 
+      // Channel actions (Channels.gs)
+      case 'searchChannels':
+        var searchUid = verifyFirebaseIdToken(req.firebaseIdToken);
+        result = searchChannels(req.query);
+        break;
+      case 'addChannel':
+        var addUid = verifyFirebaseIdToken(req.firebaseIdToken);
+        result = addChannel(addUid, req.channel);
+        break;
+
       // Sync actions (Sync.gs)
       case 'sync':
       default:
@@ -32,8 +42,25 @@ function doPost(e) {
         Logger.log('Target database: ' + databaseId);
         Logger.log('Target collection: ' + collectionName);
         Logger.log('User UID: ' + uid);
-        var syncedCount = performSync(uid, collectionName, databaseId);
-        result = { success: true, syncedCount: syncedCount };
+        try {
+          var syncedCount = performSync(uid, collectionName, databaseId);
+          result = { success: true, syncedCount: syncedCount };
+        } catch (syncError) {
+          // Write error status to Firestore so frontend can display it
+          try {
+            var props = PropertiesService.getScriptProperties();
+            var projectId = props.getProperty('FIREBASE_PROJECT_ID');
+            var token = getFirestoreToken();
+            var statusDocUrl = 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/' + databaseId + '/documents/users/' + uid + '/sync_status/current';
+            writeSyncStatus(statusDocUrl, token, {
+              status: 'error',
+              message: syncError.toString()
+            });
+          } catch (statusErr) {
+            Logger.log('Failed to write error status: ' + statusErr.toString());
+          }
+          throw syncError;
+        }
         break;
     }
 

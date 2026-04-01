@@ -229,19 +229,31 @@ function verifyFirebaseIdToken(idToken) {
   if (payload.exp < now) throw new Error('Token expired');
   if (payload.aud !== projectId) throw new Error('Invalid audience');
   if (payload.iss !== 'https://securetoken.google.com/' + projectId) throw new Error('Invalid issuer');
+  if (!payload.sub) throw new Error('Missing subject claim');
 
-  // Cryptographic verification via Google's endpoint
+  // Verify token via Firebase Auth REST API (accounts:lookup validates the
+  // token signature server-side and returns user info or an error).
+  // Uses service account bearer token for authorization.
+  var token = getFirestoreToken();
   var res = UrlFetchApp.fetch(
-    'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
-    { muteHttpExceptions: true }
+    'https://identitytoolkit.googleapis.com/v1/accounts:lookup',
+    {
+      method: 'post',
+      headers: { 'Authorization': 'Bearer ' + token },
+      contentType: 'application/json',
+      payload: JSON.stringify({ idToken: idToken }),
+      muteHttpExceptions: true
+    }
   );
 
   if (res.getResponseCode() !== 200) {
-    throw new Error('ID token verification failed');
+    throw new Error('ID token verification failed: ' + res.getContentText());
   }
 
-  var info = JSON.parse(res.getContentText());
-  if (info.aud !== projectId) throw new Error('Token audience mismatch after verification');
+  var data = JSON.parse(res.getContentText());
+  if (!data.users || data.users.length === 0) {
+    throw new Error('No user found for ID token');
+  }
 
   return payload.sub;
 }
