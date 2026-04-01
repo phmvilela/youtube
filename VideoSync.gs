@@ -107,8 +107,13 @@ function performSync(uid, collectionName, databaseId) {
   }
 
   var channelsData = JSON.parse(channelsResponseText);
-  var channels = channelsData.documents || [];
-  Logger.log('Found ' + channels.length + ' channels in allowed_channels collection.');
+  var allChannelDocs = channelsData.documents || [];
+  // Only sync channels with status 'active' (skip soft-deleted ones)
+  var channels = allChannelDocs.filter(function(doc) {
+    var statusField = doc.fields && doc.fields.status;
+    return statusField && statusField.stringValue === 'active';
+  });
+  Logger.log('Found ' + channels.length + ' active channels out of ' + allChannelDocs.length + ' total.');
 
   if (channels.length === 0) {
     Logger.log('No channels found.');

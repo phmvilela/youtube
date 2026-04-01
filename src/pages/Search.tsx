@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs, query, where, onSnapshot } from "firebase/firestore";
 import { db, appConfig } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -40,10 +40,26 @@ interface GroupedResults {
 export default function Search() {
   const [queryText, setQueryText] = useState('');
   const [results, setResults] = useState<GroupedResults[]>([]);
+  const [deletedChannelIds, setDeletedChannelIds] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const videoRefs = useRef<(HTMLElement | null)[]>([]);
   const { user } = useAuth();
+
+  // Listen for soft-deleted channels to exclude from search results
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'users', user.uid, 'allowed_channels'),
+      where('status', '==', 'deleted')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const ids = new Set<string>();
+      snapshot.forEach((doc) => ids.add(doc.id));
+      setDeletedChannelIds(ids);
+    });
+    return () => unsubscribe();
+  }, [user]);
 
   const handleSearch = async (searchQuery: string) => {
     if (!searchQuery.trim() || !user) {
@@ -58,7 +74,6 @@ export default function Search() {
     }
 
     try {
-      // Firestore array-contains-any allows up to 10 elements
       const searchTerms = queryWords.slice(0, 10);
       const q = query(
         collection(db, 'users', user.uid, appConfig.collectionName),
@@ -68,7 +83,10 @@ export default function Search() {
       const querySnapshot = await getDocs(q);
       const videos: SyncedVideo[] = [];
       querySnapshot.forEach((docSnap) => {
-        videos.push(docSnap.data() as SyncedVideo);
+        const video = docSnap.data() as SyncedVideo;
+        if (!deletedChannelIds.has(video.channelId)) {
+          videos.push(video);
+        }
       });
 
       // Rank based on words (and secondary, on letters) that search terms matches

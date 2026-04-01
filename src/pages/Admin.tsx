@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { collection, doc, deleteDoc, onSnapshot, query } from "firebase/firestore";
+import { collection, doc, updateDoc, onSnapshot, query, where } from "firebase/firestore";
 import { getAuth } from 'firebase/auth';
 import { db, appConfig } from '../config/firebase';
 import { callGas } from '../lib/gasClient';
@@ -109,7 +109,7 @@ export default function Admin() {
   // Load from Firestore (user-scoped)
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'users', user.uid, 'allowed_channels'));
+    const q = query(collection(db, 'users', user.uid, 'allowed_channels'), where('status', '==', 'active'));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const fetchedChannels: Channel[] = [];
       querySnapshot.forEach((doc) => {
@@ -127,7 +127,7 @@ export default function Admin() {
     const channelToRemove = channels[index];
     if (channelToRemove && user) {
       try {
-        await deleteDoc(doc(db, 'users', user.uid, 'allowed_channels', channelToRemove.id));
+        await updateDoc(doc(db, 'users', user.uid, 'allowed_channels', channelToRemove.id), { status: 'deleted' });
       } catch (e) {
         console.error("Failed to remove channel from Firestore", e);
       }

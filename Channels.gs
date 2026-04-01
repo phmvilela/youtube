@@ -56,7 +56,8 @@ function addChannel(uid, channel) {
   var fields = toFirestoreValue({
     id: channel.id,
     name: channel.name || '',
-    thumbnail: channel.thumbnail || ''
+    thumbnail: channel.thumbnail || '',
+    status: 'active'
   }).mapValue.fields;
 
   var res = UrlFetchApp.fetch(docUrl, {
