@@ -20,8 +20,6 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import UserMenu from '../components/UserMenu';
 
-const COLUMNS = 8;
-
 interface SyncedVideo {
   videoId: string;
   title: string;
@@ -32,14 +30,9 @@ interface SyncedVideo {
   searchWords?: string[];
 }
 
-interface GroupedResults {
-  channelName: string;
-  items: SyncedVideo[];
-}
-
 export default function Search() {
   const [queryText, setQueryText] = useState('');
-  const [results, setResults] = useState<GroupedResults[]>([]);
+  const [results, setResults] = useState<SyncedVideo[]>([]);
   const [deletedChannelIds, setDeletedChannelIds] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -117,22 +110,7 @@ export default function Search() {
         return b.letterMatches - a.letterMatches; // secondary: letter matches
       });
 
-      const sortedVideos = rankedVideos.map(r => r.video);
-
-      const groupedMap: Record<string, SyncedVideo[]> = {};
-      sortedVideos.forEach(video => {
-        if (!groupedMap[video.channelName]) {
-          groupedMap[video.channelName] = [];
-        }
-        groupedMap[video.channelName].push(video);
-      });
-
-      const groupedResults: GroupedResults[] = Object.keys(groupedMap).map(channelName => ({
-        channelName,
-        items: groupedMap[channelName]
-      }));
-
-      setResults(groupedResults);
+      setResults(rankedVideos.map(r => r.video));
     } catch (err) {
       console.error("Failed to search videos from Firestore:", err);
     }
@@ -141,6 +119,15 @@ export default function Search() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     handleSearch(queryText);
+  };
+
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  // Compute visible columns from the grid layout for keyboard navigation
+  const getColumns = () => {
+    if (!gridRef.current) return 1;
+    const style = window.getComputedStyle(gridRef.current);
+    return style.gridTemplateColumns.split(' ').length;
   };
 
   useEffect(() => {
@@ -157,6 +144,7 @@ export default function Search() {
 
       if (index === -1) return;
 
+      const cols = getColumns();
       switch (event.key) {
         case 'ArrowRight':
           videoRefs.current[index + 1]?.focus();
@@ -165,10 +153,10 @@ export default function Search() {
           videoRefs.current[index - 1]?.focus();
           break;
         case 'ArrowDown':
-          videoRefs.current[index + COLUMNS]?.focus();
+          videoRefs.current[index + cols]?.focus();
           break;
         case 'ArrowUp':
-          videoRefs.current[index - COLUMNS]?.focus();
+          videoRefs.current[index - cols]?.focus();
           break;
         case 'Enter':
           videoRefs.current[index]?.click();
@@ -187,72 +175,77 @@ export default function Search() {
   }, [results]);
 
   const renderedResults = useMemo(() => {
-    return results.map((res, channelIdx) => (
-      <Box key={res.channelName} sx={{ mb: 6 }}>
-        <Typography variant="h6" component="h2" sx={{ mb: 2, fontWeight: 'bold' }}>
-          {res.channelName}
-        </Typography>
-        <Box sx={{
+    videoRefs.current = [];
+    return (
+      <Box
+        ref={gridRef}
+        sx={{
           display: 'grid',
-          gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`,
-          gap: 2
-        }}>
-          {res.items.map((item, videoIdx) => {
-            const globalIdx = results.slice(0, channelIdx).reduce((acc, curr) => acc + curr.items.length, 0) + videoIdx;
-            return (
-              <Card
-                key={item.videoId}
-                sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  '&:focus-within': {
-                    outline: '4px solid #3ea6ff',
-                  }
-                }}
-              >
-                <CardActionArea
-                  component="a"
-                  href={`/watch/${item.videoId}`}
-                  onClick={(e: React.MouseEvent) => {
-                    e.preventDefault();
-                    navigate(`/watch/${item.videoId}`);
-                  }}
-                  ref={(el: any) => (videoRefs.current[globalIdx] = el)}
-                  sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'flex-start' }}
-                >
-                  {item.thumbnail ? (
-                    <CardMedia
-                      component="img"
-                      image={item.thumbnail}
-                      alt={item.title}
-                      sx={{ aspectRatio: '16/9', objectFit: 'cover' }}
-                    />
-                  ) : (
-                    <Box sx={{ width: '100%', aspectRatio: '16/9', bgcolor: 'grey.800', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Typography variant="caption" color="text.secondary">No Thumbnail</Typography>
-                    </Box>
-                  )}
-                  <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                    <Typography variant="body2" component="div" sx={{
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                      fontWeight: 500,
-                      lineHeight: 1.2,
-                      fontSize: '0.85rem'
-                    }}>
-                      {item.title}
-                    </Typography>
-                  </CardContent>
-                </CardActionArea>
-              </Card>
-            );
-          })}
-        </Box>
+          gridTemplateColumns: {
+            xs: 'repeat(auto-fill, minmax(160px, 1fr))',
+            sm: 'repeat(auto-fill, minmax(200px, 1fr))',
+            md: 'repeat(auto-fill, minmax(220px, 1fr))',
+            lg: 'repeat(auto-fill, minmax(240px, 1fr))',
+            xl: 'repeat(auto-fill, minmax(280px, 1fr))',
+          },
+          gap: 2,
+        }}
+      >
+        {results.map((item, idx) => (
+          <Card
+            key={item.videoId}
+            sx={{
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              '&:focus-within': {
+                outline: '4px solid #3ea6ff',
+              }
+            }}
+          >
+            <CardActionArea
+              component="a"
+              href={`/watch/${item.videoId}`}
+              onClick={(e: React.MouseEvent) => {
+                e.preventDefault();
+                navigate(`/watch/${item.videoId}`);
+              }}
+              ref={(el: any) => (videoRefs.current[idx] = el)}
+              sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'flex-start' }}
+            >
+              {item.thumbnail ? (
+                <CardMedia
+                  component="img"
+                  image={item.thumbnail}
+                  alt={item.title}
+                  sx={{ aspectRatio: '16/9', objectFit: 'cover' }}
+                />
+              ) : (
+                <Box sx={{ width: '100%', aspectRatio: '16/9', bgcolor: 'grey.800', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Typography variant="caption" color="text.secondary">No Thumbnail</Typography>
+                </Box>
+              )}
+              <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                <Typography variant="body2" component="div" sx={{
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  fontWeight: 500,
+                  lineHeight: 1.2,
+                  fontSize: '0.85rem'
+                }}>
+                  {item.title}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  {item.channelName}
+                </Typography>
+              </CardContent>
+            </CardActionArea>
+          </Card>
+        ))}
       </Box>
-    ));
+    );
   }, [results, navigate]);
 
   return (

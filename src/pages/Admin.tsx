@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { collection, doc, updateDoc, onSnapshot, query, where } from "firebase/firestore";
+import { collection, doc, updateDoc, onSnapshot, query } from "firebase/firestore";
 import { getAuth } from 'firebase/auth';
 import { db, appConfig } from '../config/firebase';
 import { callGas } from '../lib/gasClient';
@@ -109,11 +109,14 @@ export default function Admin() {
   // Load from Firestore (user-scoped)
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'users', user.uid, 'allowed_channels'), where('status', '==', 'active'));
+    const q = query(collection(db, 'users', user.uid, 'allowed_channels'));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const fetchedChannels: Channel[] = [];
       querySnapshot.forEach((doc) => {
-        fetchedChannels.push(doc.data() as Channel);
+        const data = doc.data();
+        if (data.status !== 'deleted') {
+          fetchedChannels.push(data as Channel);
+        }
       });
       setChannels(fetchedChannels);
     }, (error) => {
