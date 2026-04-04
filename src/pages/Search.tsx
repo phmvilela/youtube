@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { collection, getDocs, query, where, onSnapshot } from "firebase/firestore";
-import { db, appConfig } from '../config/firebase';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../auth/AuthContext';
+import { searchVideos, subscribeToDeletedChannels, type SyncedVideo } from '../services/firestore';
 import {
   Container,
   Typography,
@@ -20,16 +19,6 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import UserMenu from '../components/UserMenu';
 
-interface SyncedVideo {
-  videoId: string;
-  title: string;
-  channelName: string;
-  channelId: string;
-  publishedAt: string;
-  thumbnail?: string;
-  searchWords?: string[];
-}
-
 export default function Search() {
   const [queryText, setQueryText] = useState('');
   const [results, setResults] = useState<SyncedVideo[]>([]);
@@ -42,16 +31,7 @@ export default function Search() {
   // Listen for soft-deleted channels to exclude from search results
   useEffect(() => {
     if (!user) return;
-    const q = query(
-      collection(db, 'users', user.uid, 'allowed_channels'),
-      where('status', '==', 'deleted')
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const ids = new Set<string>();
-      snapshot.forEach((doc) => ids.add(doc.id));
-      setDeletedChannelIds(ids);
-    });
-    return () => unsubscribe();
+    return subscribeToDeletedChannels(user.uid, setDeletedChannelIds);
   }, [user]);
 
   const handleSearch = async (searchQuery: string) => {
@@ -68,19 +48,8 @@ export default function Search() {
 
     try {
       const searchTerms = queryWords.slice(0, 10);
-      const q = query(
-        collection(db, 'users', user.uid, appConfig.collectionName),
-        where('searchWords', 'array-contains-any', searchTerms)
-      );
-
-      const querySnapshot = await getDocs(q);
-      const videos: SyncedVideo[] = [];
-      querySnapshot.forEach((docSnap) => {
-        const video = docSnap.data() as SyncedVideo;
-        if (!deletedChannelIds.has(video.channelId)) {
-          videos.push(video);
-        }
-      });
+      const videos = (await searchVideos(user.uid, searchTerms))
+        .filter(video => !deletedChannelIds.has(video.channelId));
 
       // Rank based on words (and secondary, on letters) that search terms matches
       const rankedVideos = videos.map(video => {

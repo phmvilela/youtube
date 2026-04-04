@@ -1,6 +1,6 @@
 import { Box, Button, Container, Typography } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../auth/AuthContext';
 
 export default function Login() {
   const { login } = useAuth();

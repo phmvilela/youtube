@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { getAuth, signInWithCustomToken, signOut, onAuthStateChanged, updateProfile, type User } from 'firebase/auth';
 import { getApps } from 'firebase/app';
-import { generateCodeVerifier, generateCodeChallenge } from '../lib/pkce';
-import { callGas } from '../lib/gasClient';
-import { appConfig } from '../config/firebase';
+import { generateCodeVerifier, generateCodeChallenge } from './pkce';
+import { callGas } from '../services/gasClient';
+import { appConfig } from '../services/firebase';
 
 const OAUTH_SCOPES = [
   'openid',

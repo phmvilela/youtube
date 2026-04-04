@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../config/firebase';
-import { useAuth } from './AuthContext';
+import { db } from '../services/firebase';
+import { useAuth } from '../auth/AuthContext';
 import { Snackbar, Alert } from '@mui/material';
 
 export interface SyncStatus {

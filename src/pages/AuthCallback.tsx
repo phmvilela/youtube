@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, CircularProgress, Typography } from '@mui/material';
-import { handleAuthCallback } from '../contexts/AuthContext';
+import { handleAuthCallback } from '../auth/AuthContext';
 
 export default function AuthCallback() {
   const [error, setError] = useState<string | null>(null);

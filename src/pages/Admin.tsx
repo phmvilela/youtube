@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { collection, doc, updateDoc, onSnapshot, query } from "firebase/firestore";
 import { getAuth } from 'firebase/auth';
-import { db, appConfig } from '../config/firebase';
-import { callGas } from '../lib/gasClient';
-import { useAuth } from '../contexts/AuthContext';
+import { appConfig } from '../services/firebase';
+import { callGas } from '../services/gasClient';
+import { useAuth } from '../auth/AuthContext';
+import { subscribeToActiveChannels, softDeleteChannel, type Channel } from '../services/firestore';
 import {
   Box, Typography, List, ListItem, ListItemAvatar, Avatar, ListItemText,
   IconButton, Paper, AppBar, Toolbar, Container, LinearProgress,
@@ -16,12 +16,6 @@ import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import UserMenu from '../components/UserMenu';
 import { useSyncStatus } from '../contexts/SyncStatusContext';
-
-interface Channel {
-  id: string;
-  name: string;
-  thumbnail?: string;
-}
 
 export default function Admin() {
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -109,28 +103,18 @@ export default function Admin() {
   // Load from Firestore (user-scoped)
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'users', user.uid, 'allowed_channels'));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const fetchedChannels: Channel[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.status !== 'deleted') {
-          fetchedChannels.push(data as Channel);
-        }
-      });
-      setChannels(fetchedChannels);
-    }, (error) => {
-      console.error("Error listening to allowed_channels:", error);
-    });
-
-    return () => unsubscribe();
+    return subscribeToActiveChannels(
+      user.uid,
+      setChannels,
+      (error) => console.error("Error listening to allowed_channels:", error),
+    );
   }, [user]);
 
   const handleRemoveChannel = async (index: number) => {
     const channelToRemove = channels[index];
     if (channelToRemove && user) {
       try {
-        await updateDoc(doc(db, 'users', user.uid, 'allowed_channels', channelToRemove.id), { status: 'deleted' });
+        await softDeleteChannel(user.uid, channelToRemove.id);
       } catch (e) {
         console.error("Failed to remove channel from Firestore", e);
       }
