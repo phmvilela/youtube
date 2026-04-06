@@ -29,6 +29,11 @@ gas/               # Google Apps Script backend (.gs files)
   Channels.gs      # YouTube channel search and management
   VideoSync.gs     # Video metadata sync from YouTube API to Firestore
   DataMigration.gs # One-off data migration utilities
+
+functions/           # GCP Cloud Run Functions (Node.js)
+  index.js           # Function entry point (streamContents)
+  contents.txt       # Sample text file streamed to clients
+  package.json       # Dependencies (functions-framework, firebase-admin)
 ```
 
 ## Architecture

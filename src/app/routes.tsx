@@ -7,6 +7,7 @@ import Watch from '../pages/Watch';
 import KeyDebug from '../pages/KeyDebug';
 import Admin from '../pages/Admin';
 import Preferences from '../pages/Preferences';
+import StreamDemo from '../pages/StreamDemo';
 import Login from '../pages/Login';
 import AuthCallback from '../pages/AuthCallback';
 
@@ -34,6 +35,7 @@ export default function AppRoutes() {
         <Route path="/watch/:id" element={<Watch />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/preferences" element={<Preferences />} />
+        <Route path="/stream-demo" element={<StreamDemo />} />
       </Route>
     </Routes>
   );

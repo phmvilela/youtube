@@ -16,6 +16,8 @@ export const appConfig = {
   databaseId: "youtube-kids",
   googleClientId: "944053436879-oqgtkeh77saqomocuc45rf68tv24i6qf.apps.googleusercontent.com",
   gasSyncUrl: "https://script.google.com/macros/s/AKfycby_L7FzgKimnYJKK-f2_5DvdJLQrUyK2bB_HXl6ncBlQ3EmLI9Oaz3kB9sY_a8yhhap/exec",
+  //cloudRunStreamUrl: "https://stream-contents-PLACEHOLDER.a.run.app",
+  cloudRunStreamUrl: "https://us-central1-youtube-kids-462502.cloudfunctions.net/streamContents"
 } as const;
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);

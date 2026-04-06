@@ -1,5 +1,6 @@
 # dependencies
 /node_modules
+/functions/node_modules
 /.pnp
 .pnp.js
 
@@ -12,6 +13,9 @@
 
 # firebase
 .firebase/
+
+# claude
+.claude/
 
 # misc
 .DS_Store
