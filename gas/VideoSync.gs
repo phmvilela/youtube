@@ -239,3 +239,149 @@ function performSync(uid, collectionName, databaseId) {
 
   return allVideos.length;
 }
+
+/**
+ * Sync videos for a single channel.
+ * Writes per-channel progress to sync_status/channel_{channelId}.
+ *
+ * @param {string} uid - The authenticated user's UID
+ * @param {string} channelId - The YouTube channel ID to sync
+ * @param {string} collectionName - Target sub-collection for videos (default 'videos')
+ * @param {string} databaseId - Firestore database ID
+ * @returns {number} Number of videos synced
+ */
+function performChannelSync(uid, channelId, collectionName, databaseId) {
+  if (!uid) throw new Error('uid is required');
+  if (!channelId) throw new Error('channelId is required');
+
+  var props = PropertiesService.getScriptProperties();
+  var projectId = props.getProperty('FIREBASE_PROJECT_ID');
+  if (!projectId) throw new Error('FIREBASE_PROJECT_ID not set');
+
+  var dbId = databaseId || props.getProperty('FIREBASE_DATABASE_ID') || '(default)';
+  var token = getFirestoreToken();
+  var baseUrl = 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/' + dbId + '/documents';
+  var userBase = baseUrl + '/users/' + uid;
+  var statusDocUrl = userBase + '/sync_status/channel_' + channelId;
+
+  writeSyncStatus(statusDocUrl, token, {
+    status: 'fetching_videos',
+    total: 0,
+    synced: 0,
+    message: 'Fetching videos...',
+    startedAt: new Date().toISOString()
+  });
+
+  var videos = [];
+
+  try {
+    var channelResponse = YouTube.Channels.list('contentDetails,snippet', { id: channelId });
+    if (!channelResponse.items || channelResponse.items.length === 0) {
+      writeSyncStatus(statusDocUrl, token, {
+        status: 'complete', total: 0, synced: 0,
+        message: 'Channel not found on YouTube.'
+      });
+      return 0;
+    }
+
+    var uploadsPlaylistId = channelResponse.items[0].contentDetails.relatedPlaylists.uploads;
+    var pageToken = '';
+
+    while (pageToken != null) {
+      var playlistResponse = YouTube.PlaylistItems.list('snippet', {
+        playlistId: uploadsPlaylistId,
+        maxResults: 50,
+        pageToken: pageToken
+      });
+
+      var items = playlistResponse.items || [];
+      items.forEach(function(item) {
+        var snippet = item.snippet;
+        var title = snippet.title || '';
+        var channelName = snippet.channelTitle || '';
+        var rawWords = (title + ' ' + channelName).toLowerCase().split(/\W+/).filter(Boolean);
+        var searchWords = rawWords.filter(function(w, pos) { return rawWords.indexOf(w) == pos; });
+
+        var thumbnail = '';
+        if (snippet.thumbnails) {
+          thumbnail = (snippet.thumbnails.medium && snippet.thumbnails.medium.url) ||
+                      (snippet.thumbnails.default && snippet.thumbnails.default.url);
+        }
+
+        videos.push({
+          videoId: snippet.resourceId.videoId,
+          title: title,
+          channelName: channelName,
+          channelId: snippet.channelId,
+          publishedAt: snippet.publishedAt,
+          thumbnail: thumbnail,
+          searchWords: searchWords
+        });
+      });
+
+      pageToken = playlistResponse.nextPageToken;
+      if (videos.length > 5000) break;
+    }
+  } catch (err) {
+    Logger.log('Error syncing channel ' + channelId + ': ' + err.toString());
+    writeSyncStatus(statusDocUrl, token, {
+      status: 'error',
+      message: 'Error: ' + err.toString()
+    });
+    throw err;
+  }
+
+  Logger.log('Channel ' + channelId + ': ' + videos.length + ' videos to sync');
+
+  writeSyncStatus(statusDocUrl, token, {
+    status: 'writing',
+    total: videos.length,
+    synced: 0,
+    message: 'Writing ' + videos.length + ' videos...'
+  });
+
+  if (videos.length > 0) {
+    var commitUrl = baseUrl + ':commit';
+    var chunkSize = 400;
+    var totalSynced = 0;
+
+    for (var i = 0; i < videos.length; i += chunkSize) {
+      var chunk = videos.slice(i, i + chunkSize);
+      var writes = chunk.map(function(video) {
+        return {
+          update: {
+            name: 'projects/' + projectId + '/databases/' + dbId + '/documents/users/' + uid + '/' + collectionName + '/' + video.videoId,
+            fields: toFirestoreValue(video).mapValue.fields
+          }
+        };
+      });
+
+      var res = UrlFetchApp.fetch(commitUrl, {
+        method: 'post',
+        headers: { 'Authorization': 'Bearer ' + token },
+        contentType: 'application/json',
+        payload: JSON.stringify({ writes: writes }),
+        muteHttpExceptions: true
+      });
+
+      if (res.getResponseCode() === 200) {
+        totalSynced += chunk.length;
+        writeSyncStatus(statusDocUrl, token, {
+          synced: totalSynced,
+          message: totalSynced + ' of ' + videos.length + ' videos synced'
+        });
+      } else {
+        Logger.log('Batch write failed for channel ' + channelId + ': ' + res.getContentText());
+      }
+    }
+  }
+
+  writeSyncStatus(statusDocUrl, token, {
+    status: 'complete',
+    synced: videos.length,
+    total: videos.length,
+    message: 'Sync complete. ' + videos.length + ' videos synced.'
+  });
+
+  return videos.length;
+}

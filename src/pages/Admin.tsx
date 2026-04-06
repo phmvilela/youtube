@@ -4,18 +4,28 @@ import { getAuth } from 'firebase/auth';
 import { appConfig } from '../services/firebase';
 import { callGas } from '../services/gasClient';
 import { useAuth } from '../auth/AuthContext';
-import { subscribeToActiveChannels, softDeleteChannel, type Channel } from '../services/firestore';
+import {
+  subscribeToActiveChannels, softDeleteChannel, subscribeToChannelSyncStatuses,
+  type Channel, type ChannelSyncStatus,
+} from '../services/firestore';
 import {
   Box, Typography, List, ListItem, ListItemAvatar, Avatar, ListItemText,
   IconButton, Paper, AppBar, Toolbar, Container, LinearProgress,
-  TextField, CircularProgress, ListItemButton, ClickAwayListener, Popper,
+  TextField, CircularProgress, ListItemButton, ClickAwayListener, Popper, Tooltip,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
+import SyncIcon from '@mui/icons-material/Sync';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import UserMenu from '../components/UserMenu';
 import { useSyncStatus } from '../contexts/SyncStatusContext';
+
+/** Delay (ms) before triggering the real GAS sync after a channel is added. */
+const SYNC_DELAY_MS = 5000;
+const LS_KEY = 'pendingChannelSyncs';
 
 export default function Admin() {
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -33,6 +43,11 @@ export default function Admin() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // Per-channel sync state
+  const [channelSyncStatuses, setChannelSyncStatuses] = useState<Record<string, ChannelSyncStatus>>({});
+  const [pendingSyncs, setPendingSyncs] = useState<Set<string>>(new Set());
+  const syncTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'ArrowLeft' && event.shiftKey) {
@@ -43,6 +58,119 @@ export default function Admin() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigate]);
+
+  // Subscribe to per-channel sync statuses from Firestore
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToChannelSyncStatuses(user.uid, setChannelSyncStatuses);
+  }, [user]);
+
+  // Trigger a per-channel sync after SYNC_DELAY_MS
+  const triggerChannelSync = useCallback(async (channelId: string) => {
+    if (!user) return;
+    setPendingSyncs((prev) => { const next = new Set(prev); next.delete(channelId); return next; });
+    // Remove from localStorage
+    try {
+      const stored = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+      delete stored[channelId];
+      localStorage.setItem(LS_KEY, JSON.stringify(stored));
+    } catch { /* ignore */ }
+
+    try {
+      const auth = getAuth();
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) return;
+      await callGas(appConfig.gasSyncUrl, {
+        action: 'syncChannel',
+        firebaseIdToken: idToken,
+        channelId,
+        collectionName: appConfig.collectionName,
+        databaseId: appConfig.databaseId,
+      });
+    } catch (err) {
+      console.error('Per-channel sync failed for', channelId, err);
+    }
+  }, [user]);
+
+  // Schedule a sync for a newly added channel
+  const scheduleChannelSync = useCallback((channelId: string) => {
+    setPendingSyncs((prev) => new Set(prev).add(channelId));
+    // Persist to localStorage
+    try {
+      const stored = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+      stored[channelId] = Date.now();
+      localStorage.setItem(LS_KEY, JSON.stringify(stored));
+    } catch { /* ignore */ }
+
+    syncTimers.current[channelId] = setTimeout(() => {
+      delete syncTimers.current[channelId];
+      triggerChannelSync(channelId);
+    }, SYNC_DELAY_MS);
+  }, [triggerChannelSync]);
+
+  // On mount, restore pending syncs from localStorage
+  useEffect(() => {
+    try {
+      const stored: Record<string, number> = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+      const now = Date.now();
+      for (const [channelId, timestamp] of Object.entries(stored)) {
+        const elapsed = now - timestamp;
+        if (elapsed >= SYNC_DELAY_MS) {
+          // Overdue — trigger immediately (unless already syncing/complete)
+          triggerChannelSync(channelId);
+        } else {
+          // Still waiting — set remaining timer
+          setPendingSyncs((prev) => new Set(prev).add(channelId));
+          syncTimers.current[channelId] = setTimeout(() => {
+            delete syncTimers.current[channelId];
+            triggerChannelSync(channelId);
+          }, SYNC_DELAY_MS - elapsed);
+        }
+      }
+    } catch { /* ignore */ }
+
+    return () => {
+      Object.values(syncTimers.current).forEach(clearTimeout);
+    };
+  }, [triggerChannelSync]);
+
+  // Helper: get the effective sync indicator for a channel
+  const getChannelSyncInfo = (channelId: string): { tooltip: string; icon: React.ReactNode } | null => {
+    if (pendingSyncs.has(channelId)) {
+      return {
+        tooltip: 'Starting sync...',
+        icon: <SyncIcon fontSize="small" sx={{ animation: 'spin 1.5s linear infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} color="info" />,
+      };
+    }
+    const status = channelSyncStatuses[channelId];
+    if (!status || status.status === 'idle') return null;
+
+    if (status.status === 'fetching_videos') {
+      return {
+        tooltip: 'Starting sync...',
+        icon: <SyncIcon fontSize="small" sx={{ animation: 'spin 1.5s linear infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} color="info" />,
+      };
+    }
+    if (status.status === 'writing') {
+      return {
+        tooltip: `${status.synced} videos synced`,
+        icon: <SyncIcon fontSize="small" sx={{ animation: 'spin 1.5s linear infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} color="info" />,
+      };
+    }
+    if (status.status === 'complete') {
+      return {
+        tooltip: `${status.total} videos synced`,
+        icon: <CheckCircleOutlineIcon fontSize="small" color="success" />,
+      };
+    }
+    if (status.status === 'error') {
+      return {
+        tooltip: status.message || 'Sync failed',
+        icon: <ErrorOutlineIcon fontSize="small" color="error" />,
+      };
+    }
+    return null;
+  };
 
   // Debounced channel search via GAS
   useEffect(() => {
@@ -91,6 +219,8 @@ export default function Admin() {
         channel,
       });
       // onSnapshot will pick up the new channel automatically
+      // Schedule per-channel sync after delay
+      scheduleChannelSync(channel.id);
     } catch (err) {
       console.error('Failed to add channel:', err);
     } finally {
@@ -98,7 +228,7 @@ export default function Admin() {
       setSearchQuery('');
       setDropdownOpen(false);
     }
-  }, [channels]);
+  }, [channels, scheduleChannelSync]);
 
   // Load from Firestore (user-scoped)
   useEffect(() => {
@@ -232,34 +362,46 @@ export default function Admin() {
         ) : (
           <Paper variant="outlined">
             <List disablePadding>
-              {channels.map((channel, index) => (
-                <ListItem
-                  key={index}
-                  divider={index !== channels.length - 1}
-                  secondaryAction={
-                    <IconButton
-                      edge="end"
-                      aria-label="delete"
-                      onClick={() => handleRemoveChannel(index)}
-                      color="error"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  }
-                >
-                  <ListItemAvatar>
-                    <Avatar src={channel.thumbnail} alt={channel.name}>
-                      {channel.name ? channel.name[0] : '?'}
-                    </Avatar>
-                  </ListItemAvatar>
-                  <ListItemText
-                    primary={channel.name}
-                    primaryTypographyProps={{ fontWeight: 'bold' }}
-                    secondary={channel.id}
-                    secondaryTypographyProps={{ variant: 'body2', color: 'text.secondary' }}
-                  />
-                </ListItem>
-              ))}
+              {channels.map((channel, index) => {
+                const syncInfo = getChannelSyncInfo(channel.id);
+                return (
+                  <ListItem
+                    key={channel.id}
+                    divider={index !== channels.length - 1}
+                    secondaryAction={
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {syncInfo && (
+                          <Tooltip title={syncInfo.tooltip} arrow>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              {syncInfo.icon}
+                            </Box>
+                          </Tooltip>
+                        )}
+                        <IconButton
+                          edge="end"
+                          aria-label="delete"
+                          onClick={() => handleRemoveChannel(index)}
+                          color="error"
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </Box>
+                    }
+                  >
+                    <ListItemAvatar>
+                      <Avatar src={channel.thumbnail} alt={channel.name}>
+                        {channel.name ? channel.name[0] : '?'}
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText
+                      primary={channel.name}
+                      primaryTypographyProps={{ fontWeight: 'bold' }}
+                      secondary={channel.id}
+                      secondaryTypographyProps={{ variant: 'body2', color: 'text.secondary' }}
+                    />
+                  </ListItem>
+                );
+              })}
             </List>
           </Paper>
         )}

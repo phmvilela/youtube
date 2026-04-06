@@ -68,6 +68,37 @@ export function subscribeToActiveChannels(
   });
 }
 
+export interface ChannelSyncStatus {
+  status: 'idle' | 'fetching_videos' | 'writing' | 'complete' | 'error';
+  total: number;
+  synced: number;
+  message: string;
+}
+
+/** Subscribe to all per-channel sync status documents (sync_status/channel_*). */
+export function subscribeToChannelSyncStatuses(
+  uid: string,
+  onUpdate: (statuses: Record<string, ChannelSyncStatus>) => void,
+): Unsubscribe {
+  const colRef = collection(db, 'users', uid, 'sync_status');
+  return onSnapshot(colRef, (snapshot) => {
+    const statuses: Record<string, ChannelSyncStatus> = {};
+    snapshot.forEach((docSnap) => {
+      if (docSnap.id.startsWith('channel_')) {
+        const channelId = docSnap.id.slice('channel_'.length);
+        const data = docSnap.data();
+        statuses[channelId] = {
+          status: data.status ?? 'idle',
+          total: data.total ?? 0,
+          synced: data.synced ?? 0,
+          message: data.message ?? '',
+        };
+      }
+    });
+    onUpdate(statuses);
+  });
+}
+
 /** Soft-delete a channel by setting status to 'deleted'. */
 export async function softDeleteChannel(uid: string, channelId: string): Promise<void> {
   await updateDoc(doc(db, 'users', uid, 'allowed_channels', channelId), { status: 'deleted' });

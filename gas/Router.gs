@@ -34,6 +34,18 @@ function doPost(e) {
         break;
 
       // Sync actions (Sync.gs)
+      case 'syncChannel':
+        var syncChUid = verifyFirebaseIdToken(req.firebaseIdToken);
+        var chCollectionName = req.collectionName || 'videos';
+        var chDatabaseId = 'youtube-kids';
+        try {
+          var chSyncedCount = performChannelSync(syncChUid, req.channelId, chCollectionName, chDatabaseId);
+          result = { success: true, syncedCount: chSyncedCount };
+        } catch (chSyncError) {
+          throw chSyncError;
+        }
+        break;
+
       case 'sync':
       default:
         var uid = verifyFirebaseIdToken(req.firebaseIdToken);
