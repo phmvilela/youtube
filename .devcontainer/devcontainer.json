@@ -9,6 +9,10 @@
             "version": "lts"
         },
         "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+        "ghcr.io/devcontainers/features/go:1": {
+            "version": "latest",
+            "installLanguageServer": true
+        },
         "./goose-feature": {},
         "./gemini-feature": {}
     },
@@ -30,7 +34,9 @@
             ]
         }
     },
-    "forwardPorts": [5173],
+    "forwardPorts": [
+        5173
+    ],
     "postCreateCommand": "bash .devcontainer/post-create.sh",
     // Inject your API Key from your Windows/WSL environment
     "remoteEnv": {
