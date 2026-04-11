@@ -31,7 +31,7 @@ export default function Admin() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, getAccessToken } = useAuth();
   const syncStatus = useSyncStatus();
   const isSyncActive = syncStatus.status === 'fetching_videos' || syncStatus.status === 'writing';
 
@@ -80,9 +80,11 @@ export default function Admin() {
       const auth = getAuth();
       const idToken = await auth.currentUser?.getIdToken();
       if (!idToken) return;
+      const accessToken = await getAccessToken();
       await callGas(appConfig.gasSyncUrl, {
         action: 'syncChannel',
         firebaseIdToken: idToken,
+        accessToken,
         channelId,
         collectionName: appConfig.collectionName,
         databaseId: appConfig.databaseId,
@@ -90,7 +92,7 @@ export default function Admin() {
     } catch (err) {
       console.error('Per-channel sync failed for', channelId, err);
     }
-  }, [user]);
+  }, [user, getAccessToken]);
 
   // Schedule a sync for a newly added channel
   const scheduleChannelSync = useCallback((channelId: string) => {
@@ -187,9 +189,11 @@ export default function Admin() {
         const idToken = await auth.currentUser?.getIdToken();
         if (!idToken) return;
 
+        const accessToken = await getAccessToken();
         const data = await callGas<{ channels: Channel[] }>(appConfig.gasSyncUrl, {
           action: 'searchChannels',
           firebaseIdToken: idToken,
+          accessToken,
           query: searchQuery.trim(),
         });
         setSearchResults(data.channels || []);
@@ -213,9 +217,11 @@ export default function Admin() {
       const idToken = await auth.currentUser?.getIdToken();
       if (!idToken) return;
 
+      const accessToken = await getAccessToken();
       await callGas(appConfig.gasSyncUrl, {
         action: 'addChannel',
         firebaseIdToken: idToken,
+        accessToken,
         channel,
       });
       // onSnapshot will pick up the new channel automatically
@@ -266,9 +272,11 @@ export default function Admin() {
       const idToken = await auth.currentUser?.getIdToken();
       if (!idToken) throw new Error('Not authenticated');
 
+      const accessToken = await getAccessToken();
       await callGas<{ success: boolean; syncedCount?: number }>(appConfig.gasSyncUrl, {
         action: 'sync',
         firebaseIdToken: idToken,
+        accessToken,
         collectionName: appConfig.collectionName,
         databaseId: appConfig.databaseId,
       });

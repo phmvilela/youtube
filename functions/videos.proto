@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+message Video {
+  string video_id     = 1;
+  string title        = 2;
+  string channel_name = 3;
+  string channel_id   = 4;
+  string published_at = 5;
+  string thumbnail    = 6;
+}
+
+message VideoBatch {
+  repeated Video videos = 1;
+}

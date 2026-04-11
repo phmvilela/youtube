@@ -5,28 +5,19 @@
 // in Sync.gs or Auth.gs.
 
 function doPost(e) {
-  Logger.log('doPost triggered');
+  console.log('doPost triggered');
   try {
     var req = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
     var action = req.action || 'sync';
 
+    var accessToken = req.accessToken || null;
+
     var result;
     switch (action) {
-      // Auth actions (Auth.gs)
-      case 'exchangeCode':
-        result = exchangeAuthCode(req);
-        break;
-      case 'refreshAccessToken':
-        result = refreshAccessToken(req);
-        break;
-      case 'revokeTokens':
-        result = revokeUserTokens(req);
-        break;
-
       // Channel actions (Channels.gs)
       case 'searchChannels':
         var searchUid = verifyFirebaseIdToken(req.firebaseIdToken);
-        result = searchChannels(req.query);
+        result = searchChannels(req.query, accessToken);
         break;
       case 'addChannel':
         var addUid = verifyFirebaseIdToken(req.firebaseIdToken);
@@ -39,7 +30,7 @@ function doPost(e) {
         var chCollectionName = req.collectionName || 'videos';
         var chDatabaseId = 'youtube-kids';
         try {
-          var chSyncedCount = performChannelSync(syncChUid, req.channelId, chCollectionName, chDatabaseId);
+          var chSyncedCount = performChannelSync(syncChUid, req.channelId, chCollectionName, chDatabaseId, accessToken, req.firebaseIdToken);
           result = { success: true, syncedCount: chSyncedCount };
         } catch (chSyncError) {
           throw chSyncError;
@@ -51,11 +42,11 @@ function doPost(e) {
         var uid = verifyFirebaseIdToken(req.firebaseIdToken);
         var collectionName = req.collectionName || 'videos';
         var databaseId = 'youtube-kids';
-        Logger.log('Target database: ' + databaseId);
-        Logger.log('Target collection: ' + collectionName);
-        Logger.log('User UID: ' + uid);
+        console.log('Target database: ' + databaseId);
+        console.log('Target collection: ' + collectionName);
+        console.log('User UID: ' + uid);
         try {
-          var syncedCount = performSync(uid, collectionName, databaseId);
+          var syncedCount = performSync(uid, collectionName, databaseId, accessToken);
           result = { success: true, syncedCount: syncedCount };
         } catch (syncError) {
           // Write error status to Firestore so frontend can display it
@@ -69,7 +60,7 @@ function doPost(e) {
               message: syncError.toString()
             });
           } catch (statusErr) {
-            Logger.log('Failed to write error status: ' + statusErr.toString());
+            console.error('Failed to write error status: ' + statusErr.toString());
           }
           throw syncError;
         }
@@ -80,7 +71,7 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (error) {
-    Logger.log('Error in doPost: ' + error.toString());
+    console.error('Error in doPost: ' + error.toString());
     return ContentService.createTextOutput(JSON.stringify({
       success: false,
       error: error.toString(),
@@ -125,6 +116,36 @@ function getFirestoreToken() {
   });
 
   return JSON.parse(res.getContentText()).access_token;
+}
+
+/**
+ * Call the YouTube Data API v3 using a user-provided OAuth access token.
+ * This lets the script run as "me" while charging YouTube quota to the user.
+ *
+ * @param {string} endpoint - e.g. 'search', 'channels', 'playlistItems'
+ * @param {string} part - e.g. 'snippet', 'contentDetails,snippet'
+ * @param {Object} params - query parameters (excluding 'part' and 'key')
+ * @param {string} userAccessToken - the user's Google OAuth access token
+ * @returns {Object} parsed JSON response
+ */
+function youtubeApiCall(endpoint, part, params, userAccessToken) {
+  var qs = 'part=' + encodeURIComponent(part);
+  for (var k in params) {
+    qs += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+  }
+  var url = 'https://www.googleapis.com/youtube/v3/' + endpoint + '?' + qs;
+
+  var res = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { 'Authorization': 'Bearer ' + userAccessToken },
+    muteHttpExceptions: true
+  });
+
+  if (res.getResponseCode() !== 200) {
+    throw new Error('YouTube API ' + endpoint + ' failed (HTTP ' + res.getResponseCode() + '): ' + res.getContentText());
+  }
+
+  return JSON.parse(res.getContentText());
 }
 
 /**

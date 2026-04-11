@@ -9,22 +9,25 @@
 //
 // Also requires the YouTube Data API v3 advanced service enabled in the GAS project.
 
+var CLOUD_RUN_SYNC_URL = 'https://us-central1-youtube-kids-462502.cloudfunctions.net/youtube-videos-sync';
+var GCS_BUCKET_NAME = 'youtube-kids-462502-videos';
+
 /**
  * Helper to test the sync manually from the GAS Editor.
  * Set TEST_UID in Script Properties to your Firebase UID.
  */
 function testSync() {
-  Logger.log('Starting Manual Test Sync...');
+  console.log('Starting Manual Test Sync...');
   var props = PropertiesService.getScriptProperties();
   var dbId = props.getProperty('FIREBASE_DATABASE_ID') || 'youtube-kids';
   var uid = props.getProperty('TEST_UID');
   if (!uid) throw new Error('Set TEST_UID in Script Properties to test sync');
   try {
     var count = performSync(uid, 'videos', dbId);
-    Logger.log('Success! Total videos synced: ' + count);
+    console.log('Success! Total videos synced: ' + count);
   } catch (e) {
-    Logger.log('Test Failed: ' + e.toString());
-    Logger.log('Stack: ' + e.stack);
+    console.error('Test Failed: ' + e.toString());
+    console.error('Stack: ' + e.stack);
   }
 }
 
@@ -54,16 +57,20 @@ function writeSyncStatus(statusDocUrl, token, fields) {
   var updateMask = Object.keys(fields).map(function(k) { return 'updateMask.fieldPaths=' + k; }).join('&');
   var url = statusDocUrl + '?' + updateMask;
 
-  UrlFetchApp.fetch(url, {
+  var res = UrlFetchApp.fetch(url, {
     method: 'patch',
     headers: { 'Authorization': 'Bearer ' + token },
     contentType: 'application/json',
     payload: JSON.stringify({ fields: firestoreFields }),
     muteHttpExceptions: true
   });
+
+  if (res.getResponseCode() !== 200) {
+    console.error('writeSyncStatus failed (HTTP ' + res.getResponseCode() + '): ' + res.getContentText());
+  }
 }
 
-function performSync(uid, collectionName, databaseId) {
+function performSync(uid, collectionName, databaseId, userAccessToken) {
   if (!uid) throw new Error('uid is required for performSync');
 
   var props = PropertiesService.getScriptProperties();
@@ -71,9 +78,9 @@ function performSync(uid, collectionName, databaseId) {
   if (!projectId) throw new Error('FIREBASE_PROJECT_ID not set in Script Properties');
 
   var dbId = databaseId || props.getProperty('FIREBASE_DATABASE_ID') || '(default)';
-  Logger.log('Project ID: ' + projectId);
-  Logger.log('Database ID: ' + dbId);
-  Logger.log('User UID: ' + uid);
+  console.log('Project ID: ' + projectId);
+  console.log('Database ID: ' + dbId);
+  console.log('User UID: ' + uid);
 
   var token = getFirestoreToken();
   var baseUrl = 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/' + dbId + '/documents';
@@ -93,7 +100,7 @@ function performSync(uid, collectionName, databaseId) {
 
   // Step A: Fetch allowed channels from Firestore (user-scoped)
   var channelsUrl = userBase + '/allowed_channels?pageSize=100';
-  Logger.log('Fetching channels from: ' + channelsUrl);
+  console.log('Fetching channels from: ' + channelsUrl);
 
   var channelsRes = UrlFetchApp.fetch(channelsUrl, {
     method: 'get',
@@ -113,10 +120,10 @@ function performSync(uid, collectionName, databaseId) {
     var statusField = doc.fields && doc.fields.status;
     return statusField && statusField.stringValue === 'active';
   });
-  Logger.log('Found ' + channels.length + ' active channels out of ' + allChannelDocs.length + ' total.');
+  console.log('Found ' + channels.length + ' active channels out of ' + allChannelDocs.length + ' total.');
 
   if (channels.length === 0) {
-    Logger.log('No channels found.');
+    console.log('No channels found.');
     writeSyncStatus(statusDocUrl, token, {
       status: 'complete',
       total: 0,
@@ -138,18 +145,16 @@ function performSync(uid, collectionName, databaseId) {
     var channelId = pathParts[pathParts.length - 1];
 
     try {
-      var channelResponse = YouTube.Channels.list('contentDetails,snippet', { id: channelId });
+      var channelResponse = youtubeApiCall('channels', 'contentDetails,snippet', { id: channelId }, userAccessToken);
       if (!channelResponse.items || channelResponse.items.length === 0) return;
 
       var uploadsPlaylistId = channelResponse.items[0].contentDetails.relatedPlaylists.uploads;
       var pageToken = '';
 
       while (pageToken != null) {
-        var playlistResponse = YouTube.PlaylistItems.list('snippet', {
-          playlistId: uploadsPlaylistId,
-          maxResults: 50,
-          pageToken: pageToken
-        });
+        var plParams = { playlistId: uploadsPlaylistId, maxResults: 50 };
+        if (pageToken) plParams.pageToken = pageToken;
+        var playlistResponse = youtubeApiCall('playlistItems', 'snippet', plParams, userAccessToken);
 
         var items = playlistResponse.items || [];
         items.forEach(function(item) {
@@ -179,11 +184,11 @@ function performSync(uid, collectionName, databaseId) {
         if (allVideos.length > 5000) break;
       }
     } catch (err) {
-      Logger.log('  Error processing channel ' + channelId + ': ' + err.toString());
+      console.error('Error processing channel ' + channelId + ': ' + err.toString());
     }
   });
 
-  Logger.log('Total videos to sync: ' + allVideos.length);
+  console.log('Total videos to sync: ' + allVideos.length);
 
   // Update status with total count after YouTube fetch
   writeSyncStatus(statusDocUrl, token, {
@@ -219,7 +224,7 @@ function performSync(uid, collectionName, databaseId) {
       });
 
       if (res.getResponseCode() !== 200) {
-        Logger.log('  Batch write failed: ' + res.getContentText());
+        console.error('Batch write failed: ' + res.getContentText());
       } else {
         totalSynced += chunk.length;
         writeSyncStatus(statusDocUrl, token, {
@@ -250,7 +255,7 @@ function performSync(uid, collectionName, databaseId) {
  * @param {string} databaseId - Firestore database ID
  * @returns {number} Number of videos synced
  */
-function performChannelSync(uid, channelId, collectionName, databaseId) {
+function performChannelSync(uid, channelId, collectionName, databaseId, userAccessToken, firebaseIdToken) {
   if (!uid) throw new Error('uid is required');
   if (!channelId) throw new Error('channelId is required');
 
@@ -264,6 +269,26 @@ function performChannelSync(uid, channelId, collectionName, databaseId) {
   var userBase = baseUrl + '/users/' + uid;
   var statusDocUrl = userBase + '/sync_status/channel_' + channelId;
 
+  // Acquire GCS lock — if lock already exists (HTTP 412), skip this channel
+  var gcsToken = getFirestoreToken(); // service account token with cloud-platform scope
+  var lockUrl = 'https://storage.googleapis.com/upload/storage/v1/b/' + GCS_BUCKET_NAME +
+    '/o?uploadType=media&name=channels/' + channelId + '/lock&ifGenerationMatch=0';
+  var lockRes = UrlFetchApp.fetch(lockUrl, {
+    method: 'post',
+    headers: { 'Authorization': 'Bearer ' + gcsToken },
+    contentType: 'application/octet-stream',
+    payload: '',
+    muteHttpExceptions: true
+  });
+  if (lockRes.getResponseCode() === 412) {
+    console.log('Channel ' + channelId + ' already synced (lock exists). Skipping GCS export.');
+  } else if (lockRes.getResponseCode() === 200) {
+    console.log('Lock acquired for channel ' + channelId);
+  } else {
+    console.error('Unexpected lock response for channel ' + channelId + ' (HTTP ' + lockRes.getResponseCode() + '): ' + lockRes.getContentText());
+  }
+  var gcsLockAcquired = (lockRes.getResponseCode() === 200);
+
   writeSyncStatus(statusDocUrl, token, {
     status: 'fetching_videos',
     total: 0,
@@ -275,7 +300,7 @@ function performChannelSync(uid, channelId, collectionName, databaseId) {
   var videos = [];
 
   try {
-    var channelResponse = YouTube.Channels.list('contentDetails,snippet', { id: channelId });
+    var channelResponse = youtubeApiCall('channels', 'contentDetails,snippet', { id: channelId }, userAccessToken);
     if (!channelResponse.items || channelResponse.items.length === 0) {
       writeSyncStatus(statusDocUrl, token, {
         status: 'complete', total: 0, synced: 0,
@@ -288,11 +313,9 @@ function performChannelSync(uid, channelId, collectionName, databaseId) {
     var pageToken = '';
 
     while (pageToken != null) {
-      var playlistResponse = YouTube.PlaylistItems.list('snippet', {
-        playlistId: uploadsPlaylistId,
-        maxResults: 50,
-        pageToken: pageToken
-      });
+      var plParams = { playlistId: uploadsPlaylistId, maxResults: 50 };
+      if (pageToken) plParams.pageToken = pageToken;
+      var playlistResponse = youtubeApiCall('playlistItems', 'snippet', plParams, userAccessToken);
 
       var items = playlistResponse.items || [];
       items.forEach(function(item) {
@@ -323,7 +346,7 @@ function performChannelSync(uid, channelId, collectionName, databaseId) {
       if (videos.length > 5000) break;
     }
   } catch (err) {
-    Logger.log('Error syncing channel ' + channelId + ': ' + err.toString());
+    console.error('Error syncing channel ' + channelId + ': ' + err.toString());
     writeSyncStatus(statusDocUrl, token, {
       status: 'error',
       message: 'Error: ' + err.toString()
@@ -331,7 +354,49 @@ function performChannelSync(uid, channelId, collectionName, databaseId) {
     throw err;
   }
 
-  Logger.log('Channel ' + channelId + ': ' + videos.length + ' videos to sync');
+  console.log('Channel ' + channelId + ': ' + videos.length + ' videos to sync');
+
+  // Write batches to GCS via Cloud Run (only if lock was acquired)
+  if (gcsLockAcquired && videos.length > 0) {
+    var batchSize = 400;
+    var totalBatches = Math.ceil(videos.length / batchSize);
+    console.log('Writing ' + totalBatches + ' batch(es) to GCS for channel ' + channelId);
+
+    for (var b = 0; b < videos.length; b += batchSize) {
+      var batchVideos = videos.slice(b, b + batchSize);
+      var sequence = b / batchSize;
+
+      var batchPayload = JSON.stringify({
+        channelId: channelId,
+        sequence: sequence,
+        videos: batchVideos.map(function(v) {
+          return {
+            videoId: v.videoId,
+            title: v.title,
+            channelName: v.channelName,
+            channelId: v.channelId,
+            publishedAt: v.publishedAt,
+            thumbnail: v.thumbnail
+          };
+        })
+      });
+
+      var batchRes = UrlFetchApp.fetch(CLOUD_RUN_SYNC_URL + '/writeBatch', {
+        method: 'post',
+        headers: { 'Authorization': 'Bearer ' + firebaseIdToken },
+        contentType: 'application/json',
+        payload: batchPayload,
+        muteHttpExceptions: true
+      });
+
+      if (batchRes.getResponseCode() === 200) {
+        console.log('Batch ' + sequence + ' written to GCS for channel ' + channelId);
+      } else {
+        console.error('Failed to write batch ' + sequence + ' for channel ' + channelId +
+          ' (HTTP ' + batchRes.getResponseCode() + '): ' + batchRes.getContentText());
+      }
+    }
+  }
 
   writeSyncStatus(statusDocUrl, token, {
     status: 'writing',
@@ -371,7 +436,7 @@ function performChannelSync(uid, channelId, collectionName, databaseId) {
           message: totalSynced + ' of ' + videos.length + ' videos synced'
         });
       } else {
-        Logger.log('Batch write failed for channel ' + channelId + ': ' + res.getContentText());
+        console.error('Batch write failed for channel ' + channelId + ': ' + res.getContentText());
       }
     }
   }

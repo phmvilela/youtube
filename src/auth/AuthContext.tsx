@@ -10,15 +10,22 @@ const OAUTH_SCOPES = [
   'email',
   'profile',
   'https://www.googleapis.com/auth/drive.appfolder',
+  'https://www.googleapis.com/auth/youtube.readonly',
 ].join(' ');
 
 const PKCE_VERIFIER_KEY = 'oauth-pkce-verifier';
+const ACCESS_TOKEN_KEY = 'google-access-token';
+const ACCESS_TOKEN_EXPIRY_KEY = 'google-access-token-expiry';
+
+/** Buffer (ms) before actual expiry to trigger a refresh. */
+const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 interface AuthState {
   user: User | null;
   loading: boolean;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  getAccessToken: () => Promise<string>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -70,6 +77,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }, []);
 
+  // Return a valid Google access token, refreshing via gasAuthUrl if expired.
+  const getAccessToken = useCallback(async (): Promise<string> => {
+    const stored = sessionStorage.getItem(ACCESS_TOKEN_KEY);
+    const expiryStr = sessionStorage.getItem(ACCESS_TOKEN_EXPIRY_KEY);
+
+    if (stored && expiryStr && Date.now() < Number(expiryStr) - TOKEN_REFRESH_BUFFER_MS) {
+      return stored;
+    }
+
+    // Refresh the access token via the auth GAS endpoint
+    const app = getApps()[0];
+    if (!app) throw new Error('Firebase app not initialized');
+    const auth = getAuth(app);
+    if (!auth.currentUser) throw new Error('Not authenticated');
+
+    const idToken = await auth.currentUser.getIdToken();
+    const data = await callGas<{ accessToken: string; expiresIn: number }>(appConfig.gasAuthUrl, {
+      action: 'refreshAccessToken',
+      firebaseIdToken: idToken,
+    });
+
+    sessionStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
+    sessionStorage.setItem(ACCESS_TOKEN_EXPIRY_KEY, String(Date.now() + data.expiresIn * 1000));
+
+    return data.accessToken;
+  }, []);
+
   // Sign out of Firebase and revoke tokens on the server
   const logout = useCallback(async () => {
     const app = getApps()[0];
@@ -81,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (auth.currentUser) {
       try {
         const idToken = await auth.currentUser.getIdToken();
-        await callGas(appConfig.gasSyncUrl, {
+        await callGas(appConfig.gasAuthUrl, {
           action: 'revokeTokens',
           firebaseIdToken: idToken,
         });
@@ -90,11 +124,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+    sessionStorage.removeItem(ACCESS_TOKEN_EXPIRY_KEY);
     await signOut(auth);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, getAccessToken }}>
       {children}
     </AuthContext.Provider>
   );
@@ -121,12 +157,18 @@ export async function handleAuthCallback(): Promise<User> {
 
   const redirectUri = `${window.location.origin}/auth/callback`;
 
-  const data = await callGas<{ firebaseToken: string; displayName?: string; photoURL?: string }>(appConfig.gasSyncUrl, {
+  const data = await callGas<{ firebaseToken: string; accessToken?: string; expiresIn?: number; displayName?: string; photoURL?: string }>(appConfig.gasAuthUrl, {
     action: 'exchangeCode',
     code,
     codeVerifier: verifier,
     redirectUri,
   });
+
+  // Store the Google access token for authenticated GAS calls
+  if (data.accessToken && data.expiresIn) {
+    sessionStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
+    sessionStorage.setItem(ACCESS_TOKEN_EXPIRY_KEY, String(Date.now() + data.expiresIn * 1000));
+  }
 
   const app = getApps()[0];
   if (!app) throw new Error('Firebase app not initialized');

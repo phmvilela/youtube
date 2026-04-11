@@ -9,16 +9,16 @@
  * @param {string} queryStr - The search query
  * @returns {Object} { success: true, channels: [{id, name, thumbnail}] }
  */
-function searchChannels(queryStr) {
+function searchChannels(queryStr, userAccessToken) {
   if (!queryStr || queryStr.trim().length < 2) {
     return { success: true, channels: [] };
   }
 
-  var response = YouTube.Search.list('snippet', {
+  var response = youtubeApiCall('search', 'snippet', {
     q: queryStr,
     type: 'channel',
     maxResults: 10
-  });
+  }, userAccessToken);
 
   var channels = (response.items || []).map(function(item) {
     return {

@@ -15,8 +15,8 @@ export const appConfig = {
   collectionName: "videos",
   databaseId: "youtube-kids",
   googleClientId: "944053436879-oqgtkeh77saqomocuc45rf68tv24i6qf.apps.googleusercontent.com",
-  gasSyncUrl: "https://script.google.com/macros/s/AKfycby_L7FzgKimnYJKK-f2_5DvdJLQrUyK2bB_HXl6ncBlQ3EmLI9Oaz3kB9sY_a8yhhap/exec",
-  //cloudRunStreamUrl: "https://stream-contents-PLACEHOLDER.a.run.app",
+  gasSyncUrl: "https://script.google.com/macros/s/AKfycbyje1MwfrEGwpycudBc9Xx-N_3uFij154idyRZEiisXgtI2GygpiBeu9tgiUUxhpRgX/exec",
+  gasAuthUrl: "https://script.google.com/macros/s/AKfycbxiHu0Gw5DbmR7_ZP6tgKg4mqC2FKXIK0FBoWjoaWMSXquJpDv5sxRowBAvHviRq1zg2Q/exec",
   cloudRunStreamUrl: "https://us-central1-youtube-kids-462502.cloudfunctions.net/streamContents"
 } as const;
 
