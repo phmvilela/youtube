@@ -17,7 +17,8 @@ export const appConfig = {
   googleClientId: "944053436879-oqgtkeh77saqomocuc45rf68tv24i6qf.apps.googleusercontent.com",
   gasSyncUrl: "https://script.google.com/macros/s/AKfycbyje1MwfrEGwpycudBc9Xx-N_3uFij154idyRZEiisXgtI2GygpiBeu9tgiUUxhpRgX/exec",
   gasAuthUrl: "https://script.google.com/macros/s/AKfycbxiHu0Gw5DbmR7_ZP6tgKg4mqC2FKXIK0FBoWjoaWMSXquJpDv5sxRowBAvHviRq1zg2Q/exec",
-  cloudRunStreamUrl: "https://us-central1-youtube-kids-462502.cloudfunctions.net/streamContents"
+  cloudRunStreamUrl: "https://us-central1-youtube-kids-462502.cloudfunctions.net/streamContents",
+  cloudRunSearchUrl: "https://search-service-944053436879.us-central1.run.app/search"
 } as const;
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
