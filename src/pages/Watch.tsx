@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Button, Typography, AppBar, Toolbar } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { Box, Button, IconButton, Tooltip, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import ReplayIcon from '@mui/icons-material/Replay';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import UserMenu from '../components/UserMenu';
 
 declare global {
@@ -12,29 +15,87 @@ declare global {
   }
 }
 
+const INACTIVITY_DELAY = 3000;
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <Box
+      component="kbd"
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 28,
+        height: 28,
+        px: 0.75,
+        borderRadius: 1,
+        bgcolor: 'rgba(255,255,255,0.08)',
+        border: '1px solid rgba(255,255,255,0.16)',
+        color: 'text.primary',
+        fontSize: '0.8rem',
+        fontFamily: 'inherit',
+        fontWeight: 600,
+        lineHeight: 1,
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+function ShortcutHint({ keys, label }: { keys: string[]; label: string }) {
+  return (
+    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+      {keys.map((k, i) => (
+        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+          {i > 0 && (
+            <Typography variant="caption" color="text.secondary" sx={{ mx: 0.25 }}>
+              /
+            </Typography>
+          )}
+          <Kbd>{k}</Kbd>
+        </span>
+      ))}
+      <Typography variant="caption" color="text.secondary" sx={{ ml: 0.25 }}>
+        {label}
+      </Typography>
+    </Box>
+  );
+}
+
 export default function Watch() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const playerRef = useRef<YT.Player | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const playBtnRef = useRef<HTMLButtonElement>(null);
   const [apiReady, setApiReady] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [barVisible, setBarVisible] = useState(true);
+  const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Show control bar and reset inactivity timer
+  const resetInactivityTimer = useCallback(() => {
+    setBarVisible(true);
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    if (document.fullscreenElement) {
+      inactivityTimer.current = setTimeout(() => setBarVisible(false), INACTIVITY_DELAY);
+    }
+  }, []);
+
+  // Load YouTube IFrame API
   useEffect(() => {
     if (!window.YT) {
       const tag = document.createElement('script');
       tag.src = 'https://www.youtube.com/iframe_api';
       const firstScriptTag = document.getElementsByTagName('script')[0];
       firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-
-      window.onYouTubeIframeAPIReady = () => {
-        setApiReady(true);
-      };
+      window.onYouTubeIframeAPIReady = () => setApiReady(true);
     } else {
       setApiReady(true);
     }
   }, []);
 
+  // Create player
   useEffect(() => {
     if (apiReady && id && containerRef.current) {
       playerRef.current = new window.YT.Player('player', {
@@ -43,16 +104,10 @@ export default function Watch() {
           autoplay: 0,
           rel: 0,
           controls: 1,
-          modestbranding: 1
+          modestbranding: 1,
         },
-        events: {
-          onReady: () => {
-            playBtnRef.current?.focus();
-          }
-        }
       });
     }
-
     return () => {
       if (playerRef.current) {
         playerRef.current.destroy();
@@ -60,6 +115,51 @@ export default function Watch() {
     };
   }, [apiReady, id]);
 
+  const toggleFullscreen = useCallback(() => {
+    const wrapper = document.getElementById('watch-wrapper');
+    if (!wrapper) return;
+    if (!document.fullscreenElement) {
+      wrapper.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  }, []);
+
+  // Track fullscreen state and manage bar visibility on transitions
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      if (fs) {
+        // Entering fullscreen: start inactivity timer
+        if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+        inactivityTimer.current = setTimeout(() => setBarVisible(false), INACTIVITY_DELAY);
+      } else {
+        // Exiting fullscreen: always show bar
+        if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+        setBarVisible(true);
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  // Mouse/keyboard activity listener for fullscreen auto-hide
+  useEffect(() => {
+    const wrapper = document.getElementById('watch-wrapper');
+    if (!wrapper) return;
+
+    const onActivity = () => resetInactivityTimer();
+
+    wrapper.addEventListener('mousemove', onActivity);
+    wrapper.addEventListener('keydown', onActivity);
+    return () => {
+      wrapper.removeEventListener('mousemove', onActivity);
+      wrapper.removeEventListener('keydown', onActivity);
+    };
+  }, [resetInactivityTimer]);
+
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const player = playerRef.current;
@@ -67,20 +167,18 @@ export default function Watch() {
 
       const currentTime = player.getCurrentTime();
       const duration = player.getDuration();
-      const volume = player.getVolume();
 
       switch (event.key) {
         case 'ArrowRight':
           player.seekTo(Math.min(currentTime + 10, duration), true);
           break;
         case 'ArrowLeft':
-          player.seekTo(Math.max(currentTime - 10, 0), true);
-          break;
-        case 'ArrowUp':
-          player.setVolume(Math.min(volume + 10, 100));
-          break;
-        case 'ArrowDown':
-          player.setVolume(Math.max(volume - 10, 0));
+          if (event.shiftKey) {
+            if (document.fullscreenElement) document.exitFullscreen();
+            navigate('/');
+          } else {
+            player.seekTo(Math.max(currentTime - 10, 0), true);
+          }
           break;
         case ' ':
         case 'Spacebar':
@@ -94,52 +192,146 @@ export default function Watch() {
             event.preventDefault();
           }
           break;
-        case '1':
+        case 'f':
+        case 'F':
+          toggleFullscreen();
+          break;
         case 'Escape':
-        case 'Backspace':
-          navigate('/');
+          if (document.fullscreenElement) {
+            document.exitFullscreen();
+          } else {
+            navigate('/');
+          }
           break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigate]);
+  }, [navigate, toggleFullscreen]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: 'black', color: 'white' }}>
-      <AppBar position="static" color="transparent" elevation={0} sx={{ zIndex: 2, bgcolor: 'background.paper' }}>
-        <Toolbar sx={{ gap: 2 }}>
-          <Button
-            ref={playBtnRef}
-            variant="contained"
-            color="primary"
-            startIcon={<PlayArrowIcon />}
-            onClick={() => playerRef.current?.playVideo()}
-          >
-            Play Video
-          </Button>
+    <Box
+      id="watch-wrapper"
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        bgcolor: 'black',
+        color: 'white',
+      }}
+    >
+      {/* Video area */}
+      <Box sx={{ flex: 1, position: 'relative', width: '100%' }} ref={containerRef}>
+        <Box
+          id="player"
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+          }}
+        />
+      </Box>
+
+      {/* Control bar */}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: { xs: 1, sm: 2 },
+          px: { xs: 1, sm: 2 },
+          py: 1,
+          bgcolor: 'background.paper',
+          flexWrap: 'wrap',
+          transition: 'transform 0.4s ease, opacity 0.4s ease',
+          ...(isFullscreen && !barVisible && {
+            transform: 'translateY(100%)',
+            opacity: 0,
+            pointerEvents: 'none',
+          }),
+        }}
+      >
+        {/* Action buttons */}
+        <Button
+          variant="contained"
+          color="primary"
+          size="small"
+          startIcon={<PlayArrowIcon />}
+          onClick={() => playerRef.current?.playVideo()}
+        >
+          Play
+        </Button>
+        <Tooltip title="Play from beginning">
           <Button
             variant="outlined"
-            color="inherit"
-            startIcon={<ArrowBackIcon />}
-            onClick={() => navigate('/')}
+            color="primary"
+            size="small"
+            startIcon={<ReplayIcon />}
+            onClick={() => {
+              const player = playerRef.current;
+              if (player && typeof player.seekTo === 'function') {
+                player.seekTo(0, true);
+                player.playVideo();
+              }
+            }}
           >
-            Return to Search
+            Restart
           </Button>
-          <Box sx={{ flexGrow: 1 }} />
+        </Tooltip>
+        <Button
+          variant="outlined"
+          color="inherit"
+          size="small"
+          startIcon={<ArrowBackIcon />}
+          onClick={() => {
+            if (document.fullscreenElement) document.exitFullscreen();
+            navigate('/');
+          }}
+        >
+          Search
+        </Button>
+        <Tooltip title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}>
+          <IconButton
+            color="inherit"
+            size="small"
+            onClick={toggleFullscreen}
+          >
+            {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+          </IconButton>
+        </Tooltip>
+
+        {/* Divider */}
+        <Box
+          sx={{
+            width: '1px',
+            height: 24,
+            bgcolor: 'rgba(255,255,255,0.12)',
+            display: { xs: 'none', sm: 'block' },
+          }}
+        />
+
+        {/* Keyboard shortcuts */}
+        <Box
+          sx={{
+            display: { xs: 'none', sm: 'flex' },
+            alignItems: 'center',
+            gap: 2,
+            ml: 'auto',
+          }}
+        >
+          <ShortcutHint keys={['←', '→']} label="Seek" />
+          <ShortcutHint keys={['Space']} label="Play/Pause" />
+          <ShortcutHint keys={['F']} label="Fullscreen" />
+          <ShortcutHint keys={['Shift+←']} label="Search" />
+        </Box>
+
+        {/* UserMenu pushed to far right */}
+        <Box sx={{ ml: { xs: 'auto', sm: 0 } }}>
           <UserMenu />
-        </Toolbar>
-      </AppBar>
-      
-      <Box sx={{ flex: 1, position: 'relative', width: '100%' }} ref={containerRef}>
-        <Box id="player" sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
-      </Box>
-      
-      <Box sx={{ textAlign: 'center', p: 1.5, bgcolor: 'background.paper', color: 'text.secondary' }}>
-        <Typography variant="body2">
-          Arrows: ⬅️/➡️ seek 10s, ⬆️/⬇️ volume ±10% &nbsp;|&nbsp; Space: Play/Pause &nbsp;|&nbsp; 1: Return to Search
-        </Typography>
+        </Box>
       </Box>
     </Box>
   );
