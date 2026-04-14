@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { searchVideos, subscribeToDeletedChannels, type SyncedVideo } from '../services/firestore';
+import { searchVideos, subscribeToDeletedChannels, subscribeToActiveChannels, type SyncedVideo } from '../services/firestore';
 import {
   Container,
   Typography,
@@ -23,6 +23,7 @@ export default function Search() {
   const [queryText, setQueryText] = useState('');
   const [results, setResults] = useState<SyncedVideo[]>([]);
   const [deletedChannelIds, setDeletedChannelIds] = useState<Set<string>>(new Set());
+  const [hasChannels, setHasChannels] = useState(true);
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const videoRefs = useRef<(HTMLElement | null)[]>([]);
@@ -32,6 +33,12 @@ export default function Search() {
   useEffect(() => {
     if (!user) return;
     return subscribeToDeletedChannels(user.uid, setDeletedChannelIds);
+  }, [user]);
+
+  // Listen for active channels to show empty-state hint
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToActiveChannels(user.uid, (channels) => setHasChannels(channels.length > 0));
   }, [user]);
 
   const handleSearch = async (searchQuery: string) => {
@@ -222,7 +229,7 @@ export default function Search() {
       <AppBar position="static" color="transparent" elevation={0}>
         <Toolbar sx={{ justifyContent: 'space-between' }}>
           <Typography variant="h5" component="h1" fontWeight="bold">
-            YouTube Offline
+            FamilyTube
           </Typography>
           <UserMenu />
         </Toolbar>
@@ -231,14 +238,14 @@ export default function Search() {
       <Container maxWidth={false}>
         <Box sx={{ mb: 4, mt: 2, textAlign: 'center' }}>
           <Typography variant="body2" color="text.secondary" gutterBottom>
-            Press <strong>Shift+S</strong> on your remote to focus the search box.
+            Press <strong>Shift+S</strong> to focus the search box.
           </Typography>
 
           <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2 }}>
             <TextField
               inputRef={searchInputRef}
               variant="outlined"
-              placeholder="Search offline videos..."
+              placeholder="Search videos..."
               value={queryText}
               onChange={(e) => setQueryText(e.target.value)}
               required
@@ -263,11 +270,10 @@ export default function Search() {
           </Paper>
         )}
 
-        {results.length === 0 && !queryText && (
+        {!hasChannels && (
           <Paper sx={{ p: 4, textAlign: 'center', bgcolor: 'background.paper', borderRadius: 2 }}>
-            <Typography variant="h6" gutterBottom>Ready to search</Typography>
             <Typography variant="body1" color="text.secondary">
-              Please enter a query above. Make sure you have synced videos in the <RouterLink to="/admin" style={{ color: 'inherit' }}>Content Management</RouterLink>.
+              Make sure you have synced videos in the <RouterLink to="/admin" style={{ color: 'inherit' }}>Content Management</RouterLink>.
             </Typography>
           </Paper>
         )}

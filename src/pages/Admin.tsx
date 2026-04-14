@@ -8,9 +8,10 @@ import {
   subscribeToActiveChannels, softDeleteChannel, subscribeToChannelSyncStatuses,
   type Channel, type ChannelSyncStatus,
 } from '../services/firestore';
+import { searchYouTubeChannels } from '../services/youtube';
 import {
   Box, Typography, List, ListItem, ListItemAvatar, Avatar, ListItemText,
-  IconButton, Paper, AppBar, Toolbar, Container, LinearProgress,
+  IconButton, Paper, AppBar, Toolbar, Container,
   TextField, CircularProgress, ListItemButton, ClickAwayListener, Popper, Tooltip,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -21,7 +22,6 @@ import SyncIcon from '@mui/icons-material/Sync';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import UserMenu from '../components/UserMenu';
-import { useSyncStatus } from '../contexts/SyncStatusContext';
 
 /** Delay (ms) before triggering the real GAS sync after a channel is added. */
 const SYNC_DELAY_MS = 5000;
@@ -29,11 +29,8 @@ const LS_KEY = 'pendingChannelSyncs';
 
 export default function Admin() {
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [isSyncing, setIsSyncing] = useState(false);
   const navigate = useNavigate();
   const { user, getAccessToken } = useAuth();
-  const syncStatus = useSyncStatus();
-  const isSyncActive = syncStatus.status === 'fetching_videos' || syncStatus.status === 'writing';
 
   // Channel search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -174,7 +171,7 @@ export default function Admin() {
     return null;
   };
 
-  // Debounced channel search via GAS
+  // Debounced channel search via YouTube Data API
   useEffect(() => {
     if (searchQuery.trim().length < 3) {
       setSearchResults([]);
@@ -185,18 +182,9 @@ export default function Admin() {
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const auth = getAuth();
-        const idToken = await auth.currentUser?.getIdToken();
-        if (!idToken) return;
-
         const accessToken = await getAccessToken();
-        const data = await callGas<{ channels: Channel[] }>(appConfig.gasSyncUrl, {
-          action: 'searchChannels',
-          firebaseIdToken: idToken,
-          accessToken,
-          query: searchQuery.trim(),
-        });
-        setSearchResults(data.channels || []);
+        const channels = await searchYouTubeChannels(searchQuery.trim(), accessToken);
+        setSearchResults(channels);
         setDropdownOpen(true);
       } catch (err) {
         console.error('Channel search failed:', err);
@@ -257,36 +245,6 @@ export default function Admin() {
     }
   };
 
-  // Resume syncing state if navigating back to a running sync
-  useEffect(() => {
-    if (isSyncActive) setIsSyncing(true);
-    if (syncStatus.status === 'complete' || syncStatus.status === 'error') setIsSyncing(false);
-  }, [syncStatus.status, isSyncActive]);
-
-  const handleServerSync = async () => {
-    if (!user) return;
-    setIsSyncing(true);
-
-    try {
-      const auth = getAuth();
-      const idToken = await auth.currentUser?.getIdToken();
-      if (!idToken) throw new Error('Not authenticated');
-
-      const accessToken = await getAccessToken();
-      await callGas<{ success: boolean; syncedCount?: number }>(appConfig.gasSyncUrl, {
-        action: 'sync',
-        firebaseIdToken: idToken,
-        accessToken,
-        collectionName: appConfig.collectionName,
-        databaseId: appConfig.databaseId,
-      });
-    } catch (error) {
-      console.error("Error during server sync:", error);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   return (
     <Box sx={{ pb: 8 }}>
       <AppBar position="static" color="transparent" elevation={0}>
@@ -295,25 +253,23 @@ export default function Admin() {
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h5" component="h1" fontWeight="bold" sx={{ flexGrow: 1 }}>
-            YouTube Offline
+            FamilyTube
           </Typography>
           <UserMenu />
         </Toolbar>
       </AppBar>
 
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Typography variant="h4" component="h2" gutterBottom>Content Management - Allowed Channels</Typography>
 
       {/* Channel search */}
       <Box sx={{ mb: 4, position: 'relative' }}>
-        <Typography variant="h6" sx={{ mb: 1 }}>Add Channel</Typography>
         <ClickAwayListener onClickAway={() => setDropdownOpen(false)}>
           <Box>
             <TextField
               inputRef={searchInputRef}
               fullWidth
               size="small"
-              placeholder="Search YouTube channels..."
+              placeholder="Search YouTube channels to add to your allowed list..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               slotProps={{
@@ -364,7 +320,7 @@ export default function Admin() {
       </Box>
 
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Saved Channels ({channels.length})</Typography>
+        <Typography variant="h6" sx={{ mb: 2 }}>Allowed Channels ({channels.length})</Typography>
         {channels.length === 0 ? (
           <Typography color="text.secondary">No channels saved yet.</Typography>
         ) : (
@@ -415,59 +371,6 @@ export default function Admin() {
         )}
       </Box>
 
-      <div style={{ marginTop: '30px', borderTop: '1px solid #ccc', paddingTop: '20px' }}>
-        <h2>Sync Channel Content</h2>
-        <p>Downloads metadata of recent uploads from configured channels for offline search.</p>
-
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <button
-            onClick={handleServerSync}
-            disabled={isSyncing || isSyncActive}
-            style={{
-              padding: '10px 16px',
-              fontSize: '16px',
-              background: (isSyncing || isSyncActive) ? '#aaa' : '#28a745',
-              color: 'white',
-              border: 'none',
-              cursor: (isSyncing || isSyncActive) ? 'not-allowed' : 'pointer',
-              borderRadius: '4px',
-              fontWeight: 'bold'
-            }}
-          >
-            {(isSyncing || isSyncActive) ? 'Syncing...' : 'Sync Server Side (GAS)'}
-          </button>
-        </Box>
-
-        {(isSyncActive || syncStatus.status === 'complete' || syncStatus.status === 'error') && (
-          <Box sx={{
-            mt: 2,
-            p: 2,
-            borderRadius: 1,
-            bgcolor: syncStatus.status === 'error' ? 'error.dark' : 'background.paper',
-            border: 1,
-            borderColor: syncStatus.status === 'error' ? 'error.main' : 'divider',
-          }}>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              {syncStatus.message}
-            </Typography>
-            {syncStatus.status === 'writing' && syncStatus.total > 0 && (
-              <>
-                <LinearProgress
-                  variant="determinate"
-                  value={(syncStatus.synced / syncStatus.total) * 100}
-                  sx={{ height: 8, borderRadius: 1, mb: 0.5 }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  {syncStatus.synced} / {syncStatus.total} videos
-                </Typography>
-              </>
-            )}
-            {syncStatus.status === 'fetching_videos' && (
-              <LinearProgress sx={{ height: 8, borderRadius: 1 }} />
-            )}
-          </Box>
-        )}
-      </div>
       </Container>
     </Box>
   );

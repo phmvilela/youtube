@@ -18,10 +18,10 @@ export default function Login() {
         }}
       >
         <Typography variant="h4" fontWeight="bold">
-          YouTube Offline
+          FamilyTube
         </Typography>
         <Typography variant="body1" color="text.secondary" textAlign="center">
-          Sign in to sync and search your favourite channels offline.
+          Sign in to curate and search your favourite channels.
         </Typography>
         <Button
           variant="contained"

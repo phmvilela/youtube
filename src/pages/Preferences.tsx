@@ -12,7 +12,7 @@ export default function Preferences() {
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h5" component="h1" fontWeight="bold" sx={{ flexGrow: 1 }}>
-            YouTube Offline
+            FamilyTube
           </Typography>
           <UserMenu />
         </Toolbar>
