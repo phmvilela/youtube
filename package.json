@@ -14,6 +14,7 @@
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.3.9",
     "@mui/material": "^7.3.9",
+    "@tanstack/react-virtual": "^3.13.23",
     "firebase": "^10.12.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
