@@ -101,7 +101,7 @@ export default function Watch() {
       playerRef.current = new window.YT.Player('player', {
         videoId: id,
         playerVars: {
-          autoplay: 0,
+          autoplay: 1,
           rel: 0,
           controls: 1,
           modestbranding: 1,
@@ -246,11 +246,18 @@ export default function Watch() {
           py: 1,
           bgcolor: 'background.paper',
           flexWrap: 'wrap',
-          transition: 'transform 0.4s ease, opacity 0.4s ease',
-          ...(isFullscreen && !barVisible && {
-            transform: 'translateY(100%)',
-            opacity: 0,
-            pointerEvents: 'none',
+          transition: 'transform 0.3s ease, opacity 0.3s ease',
+          ...(isFullscreen && {
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 10,
+            ...(!barVisible && {
+              transform: 'translateY(100%)',
+              opacity: 0,
+              pointerEvents: 'none',
+            }),
           }),
         }}
       >
