@@ -65,25 +65,38 @@ function ShortcutHint({ keys, label }: { keys: string[]; label: string }) {
   );
 }
 
+type HoldState = 'idle' | 'holding' | 'release';
+
 interface VideoThumbProps {
   video: VideoResult;
   isActive: boolean;
   thumbRef?: React.Ref<HTMLDivElement>;
   onSelect: () => void;
+  onHoldStateChange?: (state: HoldState) => void;
 }
 
-function VideoThumb({ video, isActive, thumbRef, onSelect }: VideoThumbProps) {
+function VideoThumb({ video, isActive, thumbRef, onSelect, onHoldStateChange }: VideoThumbProps) {
   const [progress, setProgress] = useState(0);
   const rafRef = useRef<number>(0);
   const startTimeRef = useRef(0);
   const pressedRef = useRef(false);
+  const completedRef = useRef(false);
   const isTouchRef = useRef(false);
 
   const cancel = useCallback(() => {
+    if (completedRef.current) {
+      // Finger lifted after hold completed — navigate
+      completedRef.current = false;
+      setProgress(0);
+      onHoldStateChange?.('idle');
+      onSelect();
+      return;
+    }
     pressedRef.current = false;
     cancelAnimationFrame(rafRef.current);
     setProgress(0);
-  }, []);
+    onHoldStateChange?.('idle');
+  }, [onSelect, onHoldStateChange]);
 
   const tick = useCallback(() => {
     if (!pressedRef.current) return;
@@ -92,19 +105,22 @@ function VideoThumb({ video, isActive, thumbRef, onSelect }: VideoThumbProps) {
     setProgress(ratio);
     if (ratio >= 1) {
       pressedRef.current = false;
-      onSelect();
+      completedRef.current = true;
+      onHoldStateChange?.('release');
     } else {
       rafRef.current = requestAnimationFrame(tick);
     }
-  }, [onSelect]);
+  }, [onHoldStateChange]);
 
   const onTouchStart = useCallback(() => {
     isTouchRef.current = true;
     if (isActive) return;
+    completedRef.current = false;
     pressedRef.current = true;
     startTimeRef.current = performance.now();
+    onHoldStateChange?.('holding');
     rafRef.current = requestAnimationFrame(tick);
-  }, [isActive, tick]);
+  }, [isActive, tick, onHoldStateChange]);
 
   useEffect(() => {
     return () => cancelAnimationFrame(rafRef.current);
@@ -128,6 +144,7 @@ function VideoThumb({ video, isActive, thumbRef, onSelect }: VideoThumbProps) {
       onTouchEnd={cancel}
       onTouchCancel={cancel}
       onTouchMove={cancel}
+      onContextMenu={(e) => e.preventDefault()}
       sx={{
         position: 'relative',
         flexShrink: 0,
@@ -212,6 +229,7 @@ export default function Watch() {
   const [apiReady, setApiReady] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [barVisible, setBarVisible] = useState(true);
+  const [holdState, setHoldState] = useState<HoldState>('idle');
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Scroll active thumbnail into view
@@ -368,6 +386,38 @@ export default function Watch() {
         color: 'white',
       }}
     >
+      {/* Hold/Release banner */}
+      {holdState !== 'idle' && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 20,
+            display: 'flex',
+            justifyContent: 'center',
+            pt: 2,
+            pointerEvents: 'none',
+          }}
+        >
+          <Typography
+            sx={{
+              px: 3,
+              py: 1,
+              borderRadius: 2,
+              bgcolor: holdState === 'holding' ? 'rgba(0,0,0,0.7)' : 'rgba(255,0,0,0.8)',
+              color: 'white',
+              fontWeight: 700,
+              fontSize: '1rem',
+              letterSpacing: 1,
+            }}
+          >
+            {holdState === 'holding' ? 'Hold' : 'Release'}
+          </Typography>
+        </Box>
+      )}
+
       {/* Video area */}
       <Box sx={{ flex: 1, position: 'relative', width: '100%' }} ref={containerRef}>
         <Box
@@ -425,6 +475,7 @@ export default function Watch() {
                   video={video}
                   isActive={isActive}
                   thumbRef={isActive ? activeThumbRef : undefined}
+                  onHoldStateChange={setHoldState}
                   onSelect={() => {
                     navigate(`/watch/${video.videoId}${searchQuery ? `?q=${encodeURIComponent(searchQuery)}` : ''}`, { replace: true });
                   }}
@@ -499,13 +550,15 @@ export default function Watch() {
               height: 24,
               bgcolor: 'rgba(255,255,255,0.12)',
               display: { xs: 'none', sm: 'block' },
+              '@media (hover: none)': { display: 'none' },
             }}
           />
 
-          {/* Keyboard shortcuts */}
+          {/* Keyboard shortcuts — hidden on touch-only devices */}
           <Box
             sx={{
               display: { xs: 'none', sm: 'flex' },
+              '@media (hover: none)': { display: 'none' },
               alignItems: 'center',
               gap: 2,
               ml: 'auto',
