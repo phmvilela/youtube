@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Button, IconButton, Tooltip, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ReplayIcon from '@mui/icons-material/Replay';
@@ -66,6 +66,13 @@ function ShortcutHint({ keys, label }: { keys: string[]; label: string }) {
 export default function Watch() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const searchQuery = searchParams.get('q') ?? '';
+
+  const goBack = useCallback(() => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    navigate(searchQuery ? `/?q=${encodeURIComponent(searchQuery)}` : '/');
+  }, [navigate, searchQuery]);
   const playerRef = useRef<YT.Player | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [apiReady, setApiReady] = useState(false);
@@ -174,8 +181,7 @@ export default function Watch() {
           break;
         case 'ArrowLeft':
           if (event.shiftKey) {
-            if (document.fullscreenElement) document.exitFullscreen();
-            navigate('/');
+            goBack();
           } else {
             player.seekTo(Math.max(currentTime - 10, 0), true);
           }
@@ -200,7 +206,7 @@ export default function Watch() {
           if (document.fullscreenElement) {
             document.exitFullscreen();
           } else {
-            navigate('/');
+            goBack();
           }
           break;
       }
@@ -208,7 +214,7 @@ export default function Watch() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigate, toggleFullscreen]);
+  }, [goBack, toggleFullscreen]);
 
   return (
     <Box
@@ -293,10 +299,7 @@ export default function Watch() {
           color="inherit"
           size="small"
           startIcon={<ArrowBackIcon />}
-          onClick={() => {
-            if (document.fullscreenElement) document.exitFullscreen();
-            navigate('/');
-          }}
+          onClick={goBack}
         >
           Search
         </Button>

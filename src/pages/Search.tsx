@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link as RouterLink } from 'react-router-dom';
 import { getAuth } from 'firebase/auth';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { appConfig } from '../services/firebase';
+import { useSearchCache } from '../contexts/SearchCacheContext';
 import {
   Container,
   Typography,
@@ -52,7 +53,10 @@ function getMinCardWidth(): number {
 }
 
 export default function Search() {
-  const [queryText, setQueryText] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialQuery = searchParams.get('q') ?? '';
+
+  const [queryText, setQueryText] = useState(initialQuery);
   const [results, setResults] = useState<VideoResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [progress, setProgress] = useState<SearchProgress | null>(null);
@@ -67,8 +71,12 @@ export default function Search() {
   const flushTimerRef = useRef<number | null>(null);
   const focusedIndexRef = useRef<number>(-1);
   const hasFocusedRef = useRef(false);
+  const restoredFromCache = useRef(false);
+  const resultsRef = useRef<VideoResult[]>([]);
+  const queryRef = useRef(initialQuery);
 
   const navigate = useNavigate();
+  const searchCache = useSearchCache();
 
   // --- Batching helpers ---
 
@@ -129,6 +137,9 @@ export default function Search() {
     scrollMargin: gridContainerRef.current?.offsetTop ?? 0,
   });
 
+  resultsRef.current = results;
+  queryRef.current = queryText;
+
   // --- Streaming search ---
 
   const handleSearch = useCallback(async (searchQuery: string) => {
@@ -136,6 +147,7 @@ export default function Search() {
 
     abortRef.current?.abort();
 
+    setSearchParams({ q: searchQuery }, { replace: true });
     setResults([]);
     setError(null);
     setProgress(null);
@@ -229,12 +241,43 @@ export default function Search() {
       abortRef.current = null;
       setIsSearching(false);
     }
-  }, [bufferResult, flushBuffer, clearBuffer]);
+  }, [bufferResult, flushBuffer, clearBuffer, setSearchParams]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     handleSearch(queryText);
   };
+
+  // --- Restore from cache or auto-search from URL param ---
+
+  useEffect(() => {
+    if (restoredFromCache.current || !initialQuery) return;
+    restoredFromCache.current = true;
+
+    const cached = searchCache.get(initialQuery);
+    if (cached) {
+      setResults(cached.results);
+      setHasSearched(true);
+      requestAnimationFrame(() => window.scrollTo(0, cached.scrollY));
+    } else {
+      handleSearch(initialQuery);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Save to cache when navigating away ---
+
+  useEffect(() => {
+    return () => {
+      const q = queryRef.current.trim();
+      if (q && resultsRef.current.length > 0) {
+        searchCache.set({
+          query: q,
+          results: resultsRef.current,
+          scrollY: window.scrollY,
+        });
+      }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Keyboard navigation ---
 
@@ -265,7 +308,10 @@ export default function Search() {
           newIndex = Math.max(index - columnCount, 0);
           break;
         case 'Enter':
-          if (results[index]) navigate(`/watch/${results[index].videoId}`);
+          if (results[index]) {
+            const q = queryRef.current.trim();
+            navigate(`/watch/${results[index].videoId}${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+          }
           return;
         default:
           return;
@@ -428,10 +474,11 @@ export default function Search() {
                           >
                             <CardActionArea
                               component="a"
-                              href={`/watch/${item.videoId}`}
+                              href={`/watch/${item.videoId}${queryText.trim() ? `?q=${encodeURIComponent(queryText.trim())}` : ''}`}
                               onClick={(e: React.MouseEvent) => {
                                 e.preventDefault();
-                                navigate(`/watch/${item.videoId}`);
+                                const q = queryText.trim();
+                                navigate(`/watch/${item.videoId}${q ? `?q=${encodeURIComponent(q)}` : ''}`);
                               }}
                               onFocus={() => { focusedIndexRef.current = absoluteIdx; }}
                               data-video-index={absoluteIdx}

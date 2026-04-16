@@ -3,6 +3,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { AuthProvider } from '../auth/AuthContext';
 import { SyncStatusProvider } from '../contexts/SyncStatusContext';
+import { SearchCacheProvider } from '../contexts/SearchCacheContext';
 import darkTheme from './theme';
 import AppRoutes from './routes';
 
@@ -13,7 +14,9 @@ export default function App() {
       <BrowserRouter>
         <AuthProvider>
           <SyncStatusProvider>
-            <AppRoutes />
+            <SearchCacheProvider>
+              <AppRoutes />
+            </SearchCacheProvider>
           </SyncStatusProvider>
         </AuthProvider>
       </BrowserRouter>
