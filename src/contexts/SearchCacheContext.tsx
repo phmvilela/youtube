@@ -1,6 +1,6 @@
 import { createContext, useContext, useRef, useCallback, type ReactNode } from 'react';
 
-interface VideoResult {
+export interface VideoResult {
   videoId: string;
   title: string;
   channelName: string;

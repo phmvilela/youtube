@@ -7,6 +7,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import UserMenu from '../components/UserMenu';
+import { useSearchCache, type VideoResult } from '../contexts/SearchCacheContext';
 
 declare global {
   interface Window {
@@ -16,6 +17,7 @@ declare global {
 }
 
 const INACTIVITY_DELAY = 3000;
+const LONG_PRESS_MS = 1200;
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
@@ -63,6 +65,133 @@ function ShortcutHint({ keys, label }: { keys: string[]; label: string }) {
   );
 }
 
+interface VideoThumbProps {
+  video: VideoResult;
+  isActive: boolean;
+  thumbRef?: React.Ref<HTMLDivElement>;
+  onSelect: () => void;
+}
+
+function VideoThumb({ video, isActive, thumbRef, onSelect }: VideoThumbProps) {
+  const [progress, setProgress] = useState(0);
+  const rafRef = useRef<number>(0);
+  const startTimeRef = useRef(0);
+  const pressedRef = useRef(false);
+  const isTouchRef = useRef(false);
+
+  const cancel = useCallback(() => {
+    pressedRef.current = false;
+    cancelAnimationFrame(rafRef.current);
+    setProgress(0);
+  }, []);
+
+  const tick = useCallback(() => {
+    if (!pressedRef.current) return;
+    const elapsed = performance.now() - startTimeRef.current;
+    const ratio = Math.min(elapsed / LONG_PRESS_MS, 1);
+    setProgress(ratio);
+    if (ratio >= 1) {
+      pressedRef.current = false;
+      onSelect();
+    } else {
+      rafRef.current = requestAnimationFrame(tick);
+    }
+  }, [onSelect]);
+
+  const onTouchStart = useCallback(() => {
+    isTouchRef.current = true;
+    if (isActive) return;
+    pressedRef.current = true;
+    startTimeRef.current = performance.now();
+    rafRef.current = requestAnimationFrame(tick);
+  }, [isActive, tick]);
+
+  useEffect(() => {
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  const pressing = progress > 0 && progress < 1;
+  const degrees = Math.round(progress * 360);
+
+  return (
+    <Box
+      ref={thumbRef}
+      onClick={() => {
+        // On touch devices, only the long-press triggers selection
+        if (isTouchRef.current) {
+          isTouchRef.current = false;
+          return;
+        }
+        if (!isActive) onSelect();
+      }}
+      onTouchStart={onTouchStart}
+      onTouchEnd={cancel}
+      onTouchCancel={cancel}
+      onTouchMove={cancel}
+      sx={{
+        position: 'relative',
+        flexShrink: 0,
+        width: { xs: 120, sm: 150 },
+        cursor: isActive ? 'default' : 'pointer',
+        borderRadius: 1,
+        overflow: 'hidden',
+        border: '2px solid',
+        borderColor: isActive ? 'primary.main' : 'transparent',
+        opacity: isActive ? 1 : pressing ? 1 : 0.6,
+        transition: 'opacity 0.2s, border-color 0.2s',
+        '&:hover': { opacity: 1 },
+        // Disable context menu on long press
+        WebkitTouchCallout: 'none',
+        userSelect: 'none',
+      }}
+    >
+      {/* Long-press ring overlay */}
+      {pressing && (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            borderRadius: 'inherit',
+            pointerEvents: 'none',
+            p: '3px',
+            background: `conic-gradient(from 0deg, #ff0000 ${degrees}deg, rgba(255,255,255,0.2) ${degrees}deg)`,
+            WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+            WebkitMaskComposite: 'xor',
+            mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+            maskComposite: 'exclude',
+          }}
+        />
+      )}
+      <Box
+        component="img"
+        src={video.thumbnail}
+        alt={video.title}
+        loading="lazy"
+        draggable={false}
+        sx={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', display: 'block' }}
+      />
+      <Typography
+        variant="caption"
+        sx={{
+          display: 'block',
+          px: 0.5,
+          py: 0.25,
+          fontSize: '0.65rem',
+          lineHeight: 1.2,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          bgcolor: isActive ? 'primary.main' : 'transparent',
+          color: isActive ? 'primary.contrastText' : 'text.secondary',
+        }}
+      >
+        {video.title}
+      </Typography>
+    </Box>
+  );
+}
+
 export default function Watch() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -73,12 +202,24 @@ export default function Watch() {
     if (document.fullscreenElement) document.exitFullscreen();
     navigate(searchQuery ? `/?q=${encodeURIComponent(searchQuery)}` : '/');
   }, [navigate, searchQuery]);
+
+  const searchCache = useSearchCache();
+  const cachedResults: VideoResult[] = searchQuery ? (searchCache.get(searchQuery)?.results ?? []) : [];
+
+  const activeThumbRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YT.Player | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [apiReady, setApiReady] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [barVisible, setBarVisible] = useState(true);
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Scroll active thumbnail into view
+  useEffect(() => {
+    if (activeThumbRef.current) {
+      activeThumbRef.current.scrollIntoView({ inline: 'center', block: 'nearest' });
+    }
+  }, [id]);
 
   // Show control bar and reset inactivity timer
   const resetInactivityTimer = useCallback(() => {
@@ -242,16 +383,9 @@ export default function Watch() {
         />
       </Box>
 
-      {/* Control bar */}
+      {/* Bottom bar wrapper */}
       <Box
         sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: { xs: 1, sm: 2 },
-          px: { xs: 1, sm: 2 },
-          py: 1,
-          bgcolor: 'background.paper',
-          flexWrap: 'wrap',
           transition: 'transform 0.3s ease, opacity 0.3s ease',
           ...(isFullscreen && {
             position: 'absolute',
@@ -267,80 +401,126 @@ export default function Watch() {
           }),
         }}
       >
-        {/* Action buttons */}
-        <Button
-          variant="contained"
-          color="primary"
-          size="small"
-          startIcon={<PlayArrowIcon />}
-          onClick={() => playerRef.current?.playVideo()}
-        >
-          Play
-        </Button>
-        <Tooltip title="Play from beginning">
-          <Button
-            variant="outlined"
-            color="primary"
-            size="small"
-            startIcon={<ReplayIcon />}
-            onClick={() => {
-              const player = playerRef.current;
-              if (player && typeof player.seekTo === 'function') {
-                player.seekTo(0, true);
-                player.playVideo();
-              }
+        {/* Video strip */}
+        {cachedResults.length > 0 && (
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 1,
+              px: 1,
+              py: 0.75,
+              overflowX: 'auto',
+              bgcolor: 'rgba(15,15,15,0.9)',
+              borderBottom: '1px solid rgba(255,255,255,0.08)',
+              scrollbarWidth: 'thin',
+              '&::-webkit-scrollbar': { height: 4 },
+              '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(255,255,255,0.2)', borderRadius: 2 },
             }}
           >
-            Restart
-          </Button>
-        </Tooltip>
-        <Button
-          variant="outlined"
-          color="inherit"
-          size="small"
-          startIcon={<ArrowBackIcon />}
-          onClick={goBack}
+            {cachedResults.map((video) => {
+              const isActive = video.videoId === id;
+              return (
+                <VideoThumb
+                  key={video.videoId}
+                  video={video}
+                  isActive={isActive}
+                  thumbRef={isActive ? activeThumbRef : undefined}
+                  onSelect={() => {
+                    navigate(`/watch/${video.videoId}${searchQuery ? `?q=${encodeURIComponent(searchQuery)}` : ''}`, { replace: true });
+                  }}
+                />
+              );
+            })}
+          </Box>
+        )}
+
+        {/* Control bar */}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: { xs: 1, sm: 2 },
+            px: { xs: 1, sm: 2 },
+            py: 1,
+            bgcolor: 'background.paper',
+            flexWrap: 'wrap',
+          }}
         >
-          Search
-        </Button>
-        <Tooltip title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}>
-          <IconButton
+          {/* Action buttons */}
+          <Button
+            variant="contained"
+            color="primary"
+            size="small"
+            startIcon={<PlayArrowIcon />}
+            onClick={() => playerRef.current?.playVideo()}
+          >
+            Play
+          </Button>
+          <Tooltip title="Play from beginning">
+            <Button
+              variant="outlined"
+              color="primary"
+              size="small"
+              startIcon={<ReplayIcon />}
+              onClick={() => {
+                const player = playerRef.current;
+                if (player && typeof player.seekTo === 'function') {
+                  player.seekTo(0, true);
+                  player.playVideo();
+                }
+              }}
+            >
+              Restart
+            </Button>
+          </Tooltip>
+          <Button
+            variant="outlined"
             color="inherit"
             size="small"
-            onClick={toggleFullscreen}
+            startIcon={<ArrowBackIcon />}
+            onClick={goBack}
           >
-            {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-          </IconButton>
-        </Tooltip>
+            Search
+          </Button>
+          <Tooltip title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}>
+            <IconButton
+              color="inherit"
+              size="small"
+              onClick={toggleFullscreen}
+            >
+              {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+            </IconButton>
+          </Tooltip>
 
-        {/* Divider */}
-        <Box
-          sx={{
-            width: '1px',
-            height: 24,
-            bgcolor: 'rgba(255,255,255,0.12)',
-            display: { xs: 'none', sm: 'block' },
-          }}
-        />
+          {/* Divider */}
+          <Box
+            sx={{
+              width: '1px',
+              height: 24,
+              bgcolor: 'rgba(255,255,255,0.12)',
+              display: { xs: 'none', sm: 'block' },
+            }}
+          />
 
-        {/* Keyboard shortcuts */}
-        <Box
-          sx={{
-            display: { xs: 'none', sm: 'flex' },
-            alignItems: 'center',
-            gap: 2,
-            ml: 'auto',
-          }}
-        >
-          <ShortcutHint keys={['←', '→']} label="Seek" />
-          <ShortcutHint keys={['Space']} label="Play/Pause" />
-          <ShortcutHint keys={['F']} label="Fullscreen" />
-          <ShortcutHint keys={['Shift+←']} label="Search" />
-        </Box>
+          {/* Keyboard shortcuts */}
+          <Box
+            sx={{
+              display: { xs: 'none', sm: 'flex' },
+              alignItems: 'center',
+              gap: 2,
+              ml: 'auto',
+            }}
+          >
+            <ShortcutHint keys={['←', '→']} label="Seek" />
+            <ShortcutHint keys={['Space']} label="Play/Pause" />
+            <ShortcutHint keys={['F']} label="Fullscreen" />
+            <ShortcutHint keys={['Shift+←']} label="Search" />
+          </Box>
 
-        {/* UserMenu pushed to far right */}
-        <Box sx={{ ml: { xs: 'auto', sm: 0 } }}>
-          <UserMenu />
+          {/* UserMenu pushed to far right */}
+          <Box sx={{ ml: { xs: 'auto', sm: 0 } }}>
+            <UserMenu />
+          </Box>
         </Box>
       </Box>
     </Box>
