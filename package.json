@@ -16,6 +16,7 @@
     "@mui/material": "^7.3.9",
     "@tanstack/react-virtual": "^3.13.23",
     "firebase": "^10.12.2",
+    "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.3"

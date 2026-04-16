@@ -25,6 +25,12 @@ function doPost(e) {
       case 'revokeTokens':
         result = revokeUserTokens(req);
         break;
+      case 'requestDeviceCode':
+        result = requestDeviceCode(req);
+        break;
+      case 'pollDeviceToken':
+        result = pollDeviceToken(req);
+        break;
       default:
         throw new Error('Unknown action: ' + action);
     }
@@ -160,6 +166,127 @@ function revokeUserTokens(req) {
   deleteUserTokens(uid);
 
   return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// Device Authorization Grant (TV / big-screen flow)
+// ---------------------------------------------------------------------------
+
+/**
+ * Step 1: Request a device code from Google.
+ * Returns a user_code and verification_url for display on the TV screen.
+ *
+ * Prerequisite: Create an OAuth 2.0 client of type "TVs and Limited Input
+ * devices" in the Google Cloud Console and store its credentials as
+ * DEVICE_CLIENT_ID / DEVICE_CLIENT_SECRET in Script Properties.
+ * Falls back to the regular web client if those are not set.
+ */
+function requestDeviceCode(req) {
+  var props = PropertiesService.getScriptProperties();
+  var clientId = props.getProperty('DEVICE_CLIENT_ID') || props.getProperty('GOOGLE_CLIENT_ID');
+
+  var scopes = [
+    'openid',
+    'email',
+    'profile',
+    'https://www.googleapis.com/auth/youtube.readonly'
+  ].join(' ');
+
+  var response = UrlFetchApp.fetch('https://oauth2.googleapis.com/device/code', {
+    method: 'post',
+    payload: {
+      client_id: clientId,
+      scope: scopes
+    },
+    muteHttpExceptions: true
+  });
+
+  var data = JSON.parse(response.getContentText());
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error('Device code request failed: ' + (data.error_description || data.error));
+  }
+
+  return {
+    success: true,
+    deviceCode: data.device_code,
+    userCode: data.user_code,
+    verificationUrl: data.verification_url,
+    expiresIn: data.expires_in,
+    interval: data.interval
+  };
+}
+
+/**
+ * Step 2: Poll Google's token endpoint with the device code.
+ * Returns { pending: true } while the user hasn't authorized yet.
+ * Once authorized, exchanges tokens, stores them server-side, creates a
+ * Firebase custom token, and returns it — same as exchangeAuthCode.
+ */
+function pollDeviceToken(req) {
+  var props = PropertiesService.getScriptProperties();
+  var clientId = props.getProperty('DEVICE_CLIENT_ID') || props.getProperty('GOOGLE_CLIENT_ID');
+  var clientSecret = props.getProperty('DEVICE_CLIENT_SECRET') || props.getProperty('GOOGLE_CLIENT_SECRET');
+
+  var tokenResponse = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
+    method: 'post',
+    payload: {
+      client_id: clientId,
+      client_secret: clientSecret,
+      device_code: req.deviceCode,
+      grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+    },
+    muteHttpExceptions: true
+  });
+
+  var tokenData = JSON.parse(tokenResponse.getContentText());
+
+  // User hasn't authorized yet — keep polling
+  if (tokenData.error === 'authorization_pending') {
+    return { success: true, pending: true };
+  }
+
+  if (tokenData.error === 'slow_down') {
+    return { success: true, pending: true, slowDown: true };
+  }
+
+  if (tokenData.error === 'access_denied') {
+    throw new Error('Access denied by user');
+  }
+
+  if (tokenData.error === 'expired_token') {
+    throw new Error('Device code expired. Please try again.');
+  }
+
+  if (tokenData.error) {
+    throw new Error('Token error: ' + (tokenData.error_description || tokenData.error));
+  }
+
+  // Success — got tokens. Same post-processing as exchangeAuthCode.
+  var userInfo = getGoogleUserInfo(tokenData.access_token);
+
+  storeUserTokens(userInfo.sub, {
+    refreshToken: tokenData.refresh_token,
+    accessToken: tokenData.access_token,
+    expiresAt: Date.now() + (tokenData.expires_in * 1000),
+    scope: tokenData.scope
+  });
+
+  var firebaseToken = createFirebaseCustomToken(userInfo.sub, {
+    email: userInfo.email,
+    name: userInfo.name,
+    picture: userInfo.picture
+  });
+
+  return {
+    success: true,
+    pending: false,
+    firebaseToken: firebaseToken,
+    accessToken: tokenData.access_token,
+    expiresIn: tokenData.expires_in,
+    displayName: userInfo.name || null,
+    photoURL: userInfo.picture || null
+  };
 }
 
 // ---------------------------------------------------------------------------

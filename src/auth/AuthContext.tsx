@@ -20,6 +20,28 @@ const ACCESS_TOKEN_EXPIRY_KEY = 'google-access-token-expiry';
 /** Buffer (ms) before actual expiry to trigger a refresh. */
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
+// ---------------------------------------------------------------------------
+// Device Authorization Grant types (TV / big-screen flow)
+// ---------------------------------------------------------------------------
+
+export interface DeviceCodeResponse {
+  deviceCode: string;
+  userCode: string;
+  verificationUrl: string;
+  expiresIn: number;
+  interval: number;
+}
+
+export interface DevicePollResponse {
+  pending: boolean;
+  slowDown?: boolean;
+  firebaseToken?: string;
+  accessToken?: string;
+  expiresIn?: number;
+  displayName?: string;
+  photoURL?: string;
+}
+
 interface AuthState {
   user: User | null;
   loading: boolean;
@@ -182,6 +204,53 @@ export async function handleAuthCallback(): Promise<User> {
     await updateProfile(credential.user, {
       displayName: data.displayName ?? null,
       photoURL: data.photoURL ?? null,
+    });
+  }
+
+  return credential.user;
+}
+
+// ---------------------------------------------------------------------------
+// Device Authorization Grant helpers (TV / big-screen flow)
+// ---------------------------------------------------------------------------
+
+/** Request a device code + user code from Google via the GAS backend. */
+export async function requestDeviceCode(): Promise<DeviceCodeResponse> {
+  return callGas<DeviceCodeResponse>(appConfig.gasAuthUrl, {
+    action: 'requestDeviceCode',
+  });
+}
+
+/** Poll GAS to check whether the user has authorized the device yet. */
+export async function pollDeviceToken(deviceCode: string): Promise<DevicePollResponse> {
+  return callGas<DevicePollResponse>(appConfig.gasAuthUrl, {
+    action: 'pollDeviceToken',
+    deviceCode,
+  });
+}
+
+/**
+ * Complete sign-in after a successful device poll.
+ * Stores the access token and signs into Firebase, same as handleAuthCallback.
+ */
+export async function completeDeviceAuth(pollResult: DevicePollResponse): Promise<User> {
+  if (!pollResult.firebaseToken) throw new Error('No Firebase token in poll result');
+
+  if (pollResult.accessToken && pollResult.expiresIn) {
+    sessionStorage.setItem(ACCESS_TOKEN_KEY, pollResult.accessToken);
+    sessionStorage.setItem(ACCESS_TOKEN_EXPIRY_KEY, String(Date.now() + pollResult.expiresIn * 1000));
+  }
+
+  const app = getApps()[0];
+  if (!app) throw new Error('Firebase app not initialized');
+
+  const auth = getAuth(app);
+  const credential = await signInWithCustomToken(auth, pollResult.firebaseToken);
+
+  if (pollResult.displayName || pollResult.photoURL) {
+    await updateProfile(credential.user, {
+      displayName: pollResult.displayName ?? null,
+      photoURL: pollResult.photoURL ?? null,
     });
   }
 
