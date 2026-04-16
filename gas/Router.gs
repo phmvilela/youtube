@@ -81,7 +81,62 @@ function doPost(e) {
 }
 
 // ---------------------------------------------------------------------------
-// Shared helpers — used by both Sync.gs and Auth.gs
+// Firebase ID token verification
+// ---------------------------------------------------------------------------
+
+/**
+ * Verify a Firebase ID token.
+ * Decodes the JWT payload for structural checks, then validates the token
+ * via the Firebase Auth REST API (accounts:lookup).
+ *
+ * @param {string} idToken - Firebase ID token from the client
+ * @returns {string} The authenticated user's UID.
+ */
+function verifyFirebaseIdToken(idToken) {
+  if (!idToken) throw new Error('No Firebase ID token provided');
+
+  var props = PropertiesService.getScriptProperties();
+  var projectId = props.getProperty('FIREBASE_PROJECT_ID');
+
+  var parts = idToken.split('.');
+  if (parts.length !== 3) throw new Error('Malformed ID token');
+
+  var payload = JSON.parse(
+    Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[1])).getDataAsString()
+  );
+
+  var now = Math.floor(Date.now() / 1000);
+  if (payload.exp < now) throw new Error('Token expired');
+  if (payload.aud !== projectId) throw new Error('Invalid audience');
+  if (payload.iss !== 'https://securetoken.google.com/' + projectId) throw new Error('Invalid issuer');
+  if (!payload.sub) throw new Error('Missing subject claim');
+
+  var token = getFirestoreToken();
+  var res = UrlFetchApp.fetch(
+    'https://identitytoolkit.googleapis.com/v1/accounts:lookup',
+    {
+      method: 'post',
+      headers: { 'Authorization': 'Bearer ' + token },
+      contentType: 'application/json',
+      payload: JSON.stringify({ idToken: idToken }),
+      muteHttpExceptions: true
+    }
+  );
+
+  if (res.getResponseCode() !== 200) {
+    throw new Error('ID token verification failed: ' + res.getContentText());
+  }
+
+  var data = JSON.parse(res.getContentText());
+  if (!data.users || data.users.length === 0) {
+    throw new Error('No user found for ID token');
+  }
+
+  return payload.sub;
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
 // ---------------------------------------------------------------------------
 
 /**

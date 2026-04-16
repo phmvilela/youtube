@@ -16,6 +16,7 @@ interface DeviceFlowState {
   deviceCode: string;
   userCode: string;
   verificationUrl: string;
+  verificationUrlComplete: string | null;
   interval: number;
   expiresAt: number;
 }
@@ -40,6 +41,7 @@ export default function Login() {
         deviceCode: res.deviceCode,
         userCode: res.userCode,
         verificationUrl: res.verificationUrl,
+        verificationUrlComplete: res.verificationUrlComplete,
         interval: res.interval,
         expiresAt: Date.now() + res.expiresIn * 1000,
       });
@@ -105,7 +107,7 @@ export default function Login() {
   }, [deviceFlow, navigate, startDeviceFlow]);
 
   const qrValue = deviceFlow
-    ? `${deviceFlow.verificationUrl}?user_code=${deviceFlow.userCode}`
+    ? deviceFlow.verificationUrlComplete ?? `${deviceFlow.verificationUrl}?user_code=${deviceFlow.userCode}`
     : '';
 
   return (

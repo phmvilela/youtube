@@ -28,6 +28,7 @@ export interface DeviceCodeResponse {
   deviceCode: string;
   userCode: string;
   verificationUrl: string;
+  verificationUrlComplete: string | null;
   expiresIn: number;
   interval: number;
 }
@@ -93,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       code_challenge: challenge,
       code_challenge_method: 'S256',
       access_type: 'offline',
-      prompt: 'consent',
+      prompt: 'select_account',
     });
 
     window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;

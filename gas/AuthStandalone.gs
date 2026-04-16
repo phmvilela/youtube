@@ -1,13 +1,4 @@
 // AuthStandalone.gs - Standalone GAS web app for authentication
-//
-// Deploy this as its own Apps Script project (NOT linked to GCP).
-//
-// Required Script Properties:
-//   GOOGLE_CLIENT_ID       - OAuth 2.0 Client ID (Web application type)
-//   GOOGLE_CLIENT_SECRET   - OAuth 2.0 Client Secret
-//   FIREBASE_PROJECT_ID    - e.g. "youtube-kids-462502"
-//   FIREBASE_DATABASE_ID   - e.g. "youtube-kids"
-//   SERVICE_ACCOUNT_JSON   - Full service account JSON key
 
 function doPost(e) {
   try {
@@ -86,7 +77,8 @@ function exchangeAuthCode(req) {
     refreshToken: tokenData.refresh_token,
     accessToken: tokenData.access_token,
     expiresAt: Date.now() + (tokenData.expires_in * 1000),
-    scope: tokenData.scope
+    scope: tokenData.scope,
+    clientType: 'web'
   });
 
   var firebaseToken = createFirebaseCustomToken(userInfo.sub, {
@@ -115,12 +107,20 @@ function refreshAccessToken(req) {
   var uid = verifyFirebaseIdToken(req.firebaseIdToken);
 
   var props = PropertiesService.getScriptProperties();
-  var clientId = props.getProperty('GOOGLE_CLIENT_ID');
-  var clientSecret = props.getProperty('GOOGLE_CLIENT_SECRET');
 
   var storedTokens = getUserTokens(uid);
   if (!storedTokens || !storedTokens.refreshToken) {
     throw new Error('No refresh token found for user. Re-authentication required.');
+  }
+
+  // Use the same client credentials that were used to obtain the original tokens
+  var clientId, clientSecret;
+  if (storedTokens.clientType === 'device') {
+    clientId = props.getProperty('DEVICE_CLIENT_ID') || props.getProperty('GOOGLE_CLIENT_ID');
+    clientSecret = props.getProperty('DEVICE_CLIENT_SECRET') || props.getProperty('GOOGLE_CLIENT_SECRET');
+  } else {
+    clientId = props.getProperty('GOOGLE_CLIENT_ID');
+    clientSecret = props.getProperty('GOOGLE_CLIENT_SECRET');
   }
 
   var tokenResponse = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
@@ -212,6 +212,7 @@ function requestDeviceCode(req) {
     deviceCode: data.device_code,
     userCode: data.user_code,
     verificationUrl: data.verification_url,
+    verificationUrlComplete: data.verification_url_complete || null,
     expiresIn: data.expires_in,
     interval: data.interval
   };
@@ -269,7 +270,8 @@ function pollDeviceToken(req) {
     refreshToken: tokenData.refresh_token,
     accessToken: tokenData.access_token,
     expiresAt: Date.now() + (tokenData.expires_in * 1000),
-    scope: tokenData.scope
+    scope: tokenData.scope,
+    clientType: 'device'
   });
 
   var firebaseToken = createFirebaseCustomToken(userInfo.sub, {
@@ -432,6 +434,7 @@ function storeUserTokens(uid, tokens) {
     accessToken:  { stringValue: tokens.accessToken },
     expiresAt:    { integerValue: String(tokens.expiresAt) },
     scope:        { stringValue: tokens.scope || '' },
+    clientType:   { stringValue: tokens.clientType || 'web' },
     updatedAt:    { timestampValue: new Date().toISOString() }
   };
 
@@ -462,7 +465,8 @@ function getUserTokens(uid) {
     refreshToken: doc.fields.refreshToken.stringValue,
     accessToken:  doc.fields.accessToken.stringValue,
     expiresAt:    parseInt(doc.fields.expiresAt.integerValue, 10),
-    scope:        doc.fields.scope ? doc.fields.scope.stringValue : ''
+    scope:        doc.fields.scope ? doc.fields.scope.stringValue : '',
+    clientType:   doc.fields.clientType ? doc.fields.clientType.stringValue : 'web'
   };
 }
 
