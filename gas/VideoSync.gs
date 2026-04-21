@@ -4,13 +4,15 @@
 //
 // Required Script Properties:
 //   FIREBASE_PROJECT_ID   - Firebase project ID
-//   FIREBASE_DATABASE_ID  - Firestore database ID (defaults to 'youtube-kids')
+//   FIREBASE_DATABASE_ID  - Firestore database ID (required)
+//   GCS_BUCKET_NAME       - GCS bucket for video protobuf storage (required)
+//   CLOUD_RUN_SYNC_URL    - Cloud Run sync function URL (required)
 //   SERVICE_ACCOUNT_JSON  - Service account credentials JSON
 //
 // Also requires the YouTube Data API v3 advanced service enabled in the GAS project.
 
-var CLOUD_RUN_SYNC_URL = 'https://us-central1-youtube-kids-462502.cloudfunctions.net/youtube-videos-sync';
-var GCS_BUCKET_NAME = 'youtube-kids-462502-videos';
+var CLOUD_RUN_SYNC_URL = PropertiesService.getScriptProperties().getProperty('CLOUD_RUN_SYNC_URL');
+var GCS_BUCKET_NAME = PropertiesService.getScriptProperties().getProperty('GCS_BUCKET_NAME');
 
 /**
  * Helper to test the sync manually from the GAS Editor.
@@ -19,7 +21,8 @@ var GCS_BUCKET_NAME = 'youtube-kids-462502-videos';
 function testSync() {
   console.log('Starting Manual Test Sync...');
   var props = PropertiesService.getScriptProperties();
-  var dbId = props.getProperty('FIREBASE_DATABASE_ID') || 'youtube-kids';
+  var dbId = props.getProperty('FIREBASE_DATABASE_ID');
+  if (!dbId) throw new Error('FIREBASE_DATABASE_ID not set in Script Properties');
   var uid = props.getProperty('TEST_UID');
   if (!uid) throw new Error('Set TEST_UID in Script Properties to test sync');
   try {
@@ -77,7 +80,8 @@ function performSync(uid, collectionName, databaseId, userAccessToken) {
   var projectId = props.getProperty('FIREBASE_PROJECT_ID');
   if (!projectId) throw new Error('FIREBASE_PROJECT_ID not set in Script Properties');
 
-  var dbId = databaseId || props.getProperty('FIREBASE_DATABASE_ID') || '(default)';
+  var dbId = databaseId || props.getProperty('FIREBASE_DATABASE_ID');
+  if (!dbId) throw new Error('FIREBASE_DATABASE_ID not set in Script Properties');
   console.log('Project ID: ' + projectId);
   console.log('Database ID: ' + dbId);
   console.log('User UID: ' + uid);
@@ -263,7 +267,8 @@ function performChannelSync(uid, channelId, collectionName, databaseId, userAcce
   var projectId = props.getProperty('FIREBASE_PROJECT_ID');
   if (!projectId) throw new Error('FIREBASE_PROJECT_ID not set');
 
-  var dbId = databaseId || props.getProperty('FIREBASE_DATABASE_ID') || '(default)';
+  var dbId = databaseId || props.getProperty('FIREBASE_DATABASE_ID');
+  if (!dbId) throw new Error('FIREBASE_DATABASE_ID not set in Script Properties');
   var token = getFirestoreToken();
   var baseUrl = 'https://firestore.googleapis.com/v1/projects/' + projectId + '/databases/' + dbId + '/documents';
   var userBase = baseUrl + '/users/' + uid;

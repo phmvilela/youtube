@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "youtube-kids-462502"
+    "default": "youtube-kids-462502",
+    "uat": "youtube-kids-462502",
+    "prod": "familytube-prod"
   }
 }

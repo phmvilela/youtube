@@ -28,7 +28,8 @@ function doPost(e) {
       case 'syncChannel':
         var syncChUid = verifyFirebaseIdToken(req.firebaseIdToken);
         var chCollectionName = req.collectionName || 'videos';
-        var chDatabaseId = 'youtube-kids';
+        var chDatabaseId = PropertiesService.getScriptProperties().getProperty('FIREBASE_DATABASE_ID');
+        if (!chDatabaseId) throw new Error('FIREBASE_DATABASE_ID not set in Script Properties');
         try {
           var chSyncedCount = performChannelSync(syncChUid, req.channelId, chCollectionName, chDatabaseId, accessToken, req.firebaseIdToken);
           result = { success: true, syncedCount: chSyncedCount };
@@ -41,7 +42,8 @@ function doPost(e) {
       default:
         var uid = verifyFirebaseIdToken(req.firebaseIdToken);
         var collectionName = req.collectionName || 'videos';
-        var databaseId = 'youtube-kids';
+        var databaseId = PropertiesService.getScriptProperties().getProperty('FIREBASE_DATABASE_ID');
+        if (!databaseId) throw new Error('FIREBASE_DATABASE_ID not set in Script Properties');
         console.log('Target database: ' + databaseId);
         console.log('Target collection: ' + collectionName);
         console.log('User UID: ' + uid);

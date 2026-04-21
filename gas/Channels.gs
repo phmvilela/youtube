@@ -46,7 +46,8 @@ function addChannel(uid, channel) {
 
   var props = PropertiesService.getScriptProperties();
   var projectId = props.getProperty('FIREBASE_PROJECT_ID');
-  var dbId = props.getProperty('FIREBASE_DATABASE_ID') || 'youtube-kids';
+  var dbId = props.getProperty('FIREBASE_DATABASE_ID');
+  if (!dbId) throw new Error('FIREBASE_DATABASE_ID not set in Script Properties');
   var token = getFirestoreToken();
 
   var docUrl = 'https://firestore.googleapis.com/v1/projects/' + projectId +
