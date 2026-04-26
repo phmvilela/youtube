@@ -6,6 +6,8 @@ environment    = "prod"
 firestore_database_id = "familytube"
 videos_bucket_name    = "familytube-prod-videos"
 
+github_repo = "phmvilela/youtube"
+
 google_oauth_client_id = "652091546311-k97frlt58am583qsr7g2741pd5cjcpmv.apps.googleusercontent.com"
 
 search_service_image = "us-central1-docker.pkg.dev/familytube-prod/cloud-run-source-deploy/search-service:3ef4eb8fbe06b04d1e3a1cad8730afd078486811"

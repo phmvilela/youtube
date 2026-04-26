@@ -46,6 +46,11 @@ variable "google_oauth_client_secret" {
   sensitive   = true
 }
 
+variable "github_repo" {
+  description = "GitHub repository (owner/repo) allowed to deploy via Workload Identity Federation"
+  type        = string
+}
+
 variable "gcp_services" {
   description = "List of GCP API services to enable"
   type        = list(string)

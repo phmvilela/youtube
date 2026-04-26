@@ -6,6 +6,8 @@ environment    = "uat"
 firestore_database_id = "familytube"
 videos_bucket_name    = "familytube-videos"
 
+github_repo = "phmvilela/youtube"
+
 google_oauth_client_id = "944053436879-oqgtkeh77saqomocuc45rf68tv24i6qf.apps.googleusercontent.com"
 
 search_service_image = "us-central1-docker.pkg.dev/youtube-kids-462502/cloud-run-source-deploy/search-service@sha256:fb85b564302637529f4bda6239a6db9f145ad08e517b19e09f7fb32d0523b05b"
